@@ -21,22 +21,22 @@
 
 
 //Pin mapping
-SoftwareSerial.tellMaster(,); //comm ports with arduino 2 for communication
-const int ci_pin_usTrig1; //might want to make this an array instead of 5 seperate variables
-const int ci_pin_usEcho1;
-const int ci_pin_usTrig2;
-const int ci_pin_usEcho2;
-const int ci_pin_usTrig3;
-const int ci_pin_usEcho3;
-const int ci_pin_usTrig4;
-const int ci_pin_usEcho4;
-const int ci_pin_usTrig5;
-const int ci_pin_usEcho5;
+SoftwareSerial tellMaster(,); //comm ports with arduino 2 for communication
+const int ci_pin_usTrigLeftFront = 8; //might want to make this an array instead of 5 seperate variables
+const int ci_pin_usEchoLeftFront = 9;
+const int ci_pin_usTrigLeftBack = 2;
+const int ci_pin_usEchoLeftBack = 3;
+const int ci_pin_usTrigRight = 4;
+const int ci_pin_usEchoRight = 5;
+const int ci_pin_usTrigBack = 12;
+const int ci_pin_usEchoBack = 13;
+const int ci_pin_usTrigFront = 10;
+const int ci_pin_usEchoFront = 11;
 const int ci_pin_leftMotor;
 const int ci_pin_rightMotor;
 const int ci_pin_leftEncoder;
 const int ci_pin_rightEncoder;
-SoftwareSerial.pin_IR(,);
+SoftwareSerial pin_IR(,);
 const int ci_pin_IRswitch;
 
 //Data from sensors
