@@ -11,6 +11,15 @@
 #include <SoftwareSerial.h>
 #include <SoftwareSerial.h>
 
+//DEBUGGING
+// uncomment lines based on what needs debugging, will print values to serial every loop
+//#define debug_ultrasonic
+//#define debug_motors
+//#define debug_encoders
+//#define debug_IR
+//#define debug_communciations
+
+
 //Pin mapping
 SoftwareSerial.tellMaster(,); //comm ports with arduino 2 for communication
 const int ci_pin_usTrig1; //might want to make this an array instead of 5 seperate variables
@@ -54,7 +63,54 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  // code runs similar to master, instead of button input, gets instructions from serial port
+//reads data from all sensors
+readMaster();
+pingAll();
+readIR();
+readEncoders();
+  
+switch(i_main_modeIndex)
+{
+  case 0:
+  {
+    //sitting idle
+    break;
+  }
+  case 1:
+  {
+    //main course navigation
+    switch(i_main_courseIndex)
+    {
+      
+    }
+    break;
+  }
+  case 2;
+  {
+    //calibrate motors
+    break;
+  }
+  case 3:
+  {
+    //extra for testing or something
+    break;
+  }
+  default:
+  {
+    //this really shouldn't be possible, something is broken
+    Serial.println("ERROR unknown mode index");
+    break;
+  }
+}
+
+
+
+//debugging stuff
+//ultrasonic debug
+#ifdef debug_ultrasonic
+
+#endif
 
 }
 
@@ -73,6 +129,8 @@ void loop() {
 void readMaster()
 {
   //check for any new messages from the master comm port
+  //also have an interpretation of that message run in here
+  //we're getting 1 byte of data, so something to take the number and change whatever variables the meaning affects
   
 }
 
