@@ -15,6 +15,8 @@
 #include <I2CEncoder.h>
 #include <SoftwareSerial.h>
 
+I2CEncoder encoder_leftMotor;
+I2CEncoder encoder_rightMotor;
 
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
@@ -40,8 +42,7 @@ const int ci_pin_usTrigFront = 10;
 const int ci_pin_usEchoFront = 11;
 const int ci_pin_leftMotor = 6; //Left and right motors could be flipped
 const int ci_pin_rightMotor = 7;
-I2CEncoder encoder_leftMotor;
-I2CEncoder encoder_rightMotor;
+
 //const int ci_I2C_SDA = A4;         // I2C data = white    //these lines may need to be included to make encoders work, idk...
 //const int ci_I2C_SCL = A5;         // I2C clock = yellow
 SoftwareSerial pin_IR(14, 40); //A0 is D14, 40 is non-existant (we only need to read, not write)
@@ -88,6 +89,7 @@ byte b_HighByte;
 
 void setup() {
   // put your setup code here, to run once:
+  Wire.begin();
   Serial.begin(9600); //for debugging
   tellMaster.begin(9600);
   pin_IR.begin(2400);
@@ -104,8 +106,9 @@ void setup() {
   pinMode(ci_pin_usTrigRear, OUTPUT);
   pinMode(ci_pin_usEchoRear, INPUT);
   pinMode(ci_pin_IRswitch, INPUT);
-  pinMode(ci_pin_leftMotor, OUTPUT);
   pinMode(ci_pin_rightMotor, OUTPUT);
+  pinMode(ci_pin_leftMotor, OUTPUT);
+
 
   //more initialization
   servo_leftMotor.attach(ci_pin_leftMotor);
