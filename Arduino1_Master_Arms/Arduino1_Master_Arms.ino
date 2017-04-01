@@ -8,7 +8,13 @@
 //Example: int i_main_courseIndex
 
 #include <Servo.h>
+#include <EEPROM.h>
+#include <uSTimer2.h>
+#include <CharliePlexM.h>
+#include <Wire.h>
+#include <I2CEncoder.h>
 #include <SoftwareSerial.h>
+
 
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
@@ -18,12 +24,12 @@
 
 
 //Pin mapping
-SoftwareSerial tellSlave(,); //comm ports with arduino 2 for communication
-const int ci_pin_startButton;
-const int ci_pin_charlieplex1;
-const int ci_pin_charlieplex2;
-const int ci_pin_charlieplex3;
-const int ci_pin_charlieplex4;
+//SoftwareSerial tellSlave(,); //comm ports with arduino 2 for communication
+const int ci_pin_startButton=7;
+const int ci_pin_charlieplex1=4;
+const int ci_pin_charlieplex2=5;
+const int ci_pin_charlieplex3=6;
+const int ci_pin_charlieplex4=7;
 const int ci_pin_rearArm;
 const int ci_pin_rearHand;
 const int ci_pin_frontArm;
@@ -36,7 +42,7 @@ const int ci_pin_tipSwitch;
 
 //Data from sensors
 Servo servo_rearArm;
-Servo srevo_rearHand;
+Servo servo_rearHand;
 Servo servo_frontArm;
 Servo servo_frontHand;
 Servo servo_tipArm;
@@ -49,29 +55,60 @@ byte bt_slave_message; //stores message recieved from the slave arduino 2
 //Main loop variables
 int i_main_modeIndex; //switch statement to tell what is going on will use this variable (sit idle, course navigation, calibration, etc)
 int i_main_courseIndex; // switch statement embedded in course navigation will read this, used to determine exactly what's going on inside course
-unsigned long ul_startButotn_3secTime; //startButton stuff is used to count button presses, don't touch these variables
+unsigned long ul_startButton_3secTime; //startButton stuff is used to count button presses, don't touch these variables
 bool b_startButton_3secTimeUp;
 bool b_startButton_doOnce;
 bool b_main_calibrationStart; //used as a one off variable to start calibration functions, resets to false when idle
-unsigned long ul_main_currentmicros; //update this, use for timing in other functions
 bool b_main_tellSlaveIndexChange; //changes to true when we need to tell the slave a mode change (only tells once)
-
+unsigned long ul_debug_1secTimer; //used to control debugging outputs to be every 2 seconds, and not constantly
 
 //debouncing variables
 
+
+//Servo control variables
+bool b_servo_rearArmOn; //bool variables we use to turn on and off servos, useful for debugging/clean code?
+bool b_servo_rearHandOn;
+bool b_servo_frontArmOn;
+bool b_servo_frontHandOn;
+bool b_servo_tipArmOn;
+bool b_servo_tipPlateOn;
+const int ci_servo_armsUp;  //constant values used to control servo positions, may need to use different for rear and front
+const int ci_servo_armsDown;
+const int ci_servo_rearArmDrop;
+const int ci_servo_frontArmDrop;
+const int ci_servo_openHand;
+const int ci_servo_closeHand;
+const int ci_servo_tipPlateUp;
+const int ci_servo_tipPlateDown;
+const int ci_servo_tipArmDown;
+const int ci_servo_tipArmUp;
+int i_servo_rearArmPos;
+int i_servo_rearHandPos;
+int i_servo_frontArmPos;
+int i_servo_frontHandPos;
+int i_servo_tipArmPos;
+int i_servo_tipPlatePos;
 
 //keep adding varibles you need in cadegories labeled like this
 
 
 void setup() {
   // put your setup code here, to run once:
+  Wire.begin();
   Serial.begin(9600); //for debugging
   tellSlave.begin(9600);
 
   //set pinmodes (note servos will be switching throughout code)
-  pinMode(ci_pin_startButton, INPUT);
-  pinMode(ci_pin_charlieplex1, OUTPUT);
-  pinMode(ci_pin_charlieplex2, OUTPUT);
+  pinMode(ci_pin_startButton, INPUT_PULLUP);
+  pinMode(ci_pin_rearArm, OUTPUT);
+  pinMode(ci_pin_rearHand, OUTPUT);
+  pinMode(ci_pin_frontArm, OUTPUT);
+  pinMode(ci_pin_frontHand, OUTPUT);
+  pinMode(ci_pin_tipArm, OUTPUT);
+  pinMode(ci_pin_tipPlate, OUTPUT);
+  pinMode(ci_pin_rearSwitch, INPUT_PULLUP);
+  pinMode(ci_pin_frontSwitch, INPUT_PULLUP);
+  pinMode(ci_pin_tipSwitch, INPUT_PULLUP);
 
   //more initialization
   CharliePlexM::setBtn(ci_pin_charlieplex1, ci_pin_charlieplex2, ci_pin_charlieplex3, ci_pin_charlieplex4, ci_pin_startButton);
@@ -88,6 +125,13 @@ void setup() {
   b_startButton_doOnce = false;
   b_startButton_3secTimeUp = false;
   b_main_tellSlaveIndexChange = true;
+  b_servo_rearArmOn = true;
+  b_servo_rearHandOn = true;
+  b_servo_frontArmOn = true;
+  b_servo_frontHandOn = true;
+  b_servo_tipArmOn = true;
+  b_servo_tipPlateOn = true;
+  ul_debug_1secTimer=0;
 
 }
 
@@ -99,7 +143,7 @@ void loop() {
   // 3 = testing functions, edit in whatever you want to test here, we'll see how this goes
 
   //button press counter
-  if ((millis() - ul_startButotn_3secTime) > 3000)
+  if ((millis() - ul_startButton_3secTime) > 3000)
   {
     b_startButton_3secTimeUp = true;
     b_main_tellSlaveIndexChange = true;
@@ -113,7 +157,7 @@ void loop() {
       b_startButton_doOnce = true;
       i_main_modeIndex++;
       i_main_modeIndex = i_main_modeIndex & 7;
-      ul_startButotn_3secTime = millis();
+      ul_startButton_3secTime = millis();
       b_startButton_3secTimeUp = false;
       b_main_calibrationStart = false;
     }
@@ -132,7 +176,7 @@ void loop() {
   {
     //tell slave when mode changes
     b_main_tellSlaveIndexChange = false;
-    tellSlave.digitalWrite(); //figure out comminication code/language
+    //figure out comminication code/language and tell slave desired message
   }
 
 
@@ -184,21 +228,54 @@ void loop() {
 
 
   //debug stuff here
-  //servo debugging
+
+  if (millis() - ul_debug_1secTimer > 2000)
+  {
+    ul_debug_1secTimer = millis();
+    //servo debugging
 #ifdef debug_servos
-
+    Serial.print("Rear arm is on: ");
+    Serial.print(b_servo_rearArmOn);
+    Serial.print("  At position: ");
+    Serial.print(i_servo_rearArmPos);
+    Serial.print("     Rear hand is on: ");
+    Serial.print(b_servo_rearHandOn);
+    Serial.print("  At position: ");
+    Serial.println(i_servo_rearHandPos);
+    Serial.print("Front arm is on: ");
+    Serial.print(b_servo_frontArmOn);
+    Serial.print("  At position: ");
+    Serial.print(i_servo_frontArmPos);
+    Serial.print("     Front hand is on: ");
+    Serial.print(b_servo_frontHandOn);
+    Serial.print("  At position: ");
+    Serial.println(i_servo_frontHandPos);
+    Serial.print("Tip arm is on: ");
+    Serial.print(b_servo_TipArmOn);
+    Serial.print("  At position: ");
+    Serial.print(i_servo_tipArmPos);
+    Serial.print("     Tip plate is on: ");
+    Serial.print(b_servo_TipPlateOn);
+    Serial.print("  At position: ");
+    Serial.println(i_servo_tipPlatePos);
 #endif
 
-  //limit switch debugging
+    //limit switch debugging
 #ifdef debug_limitSwitches
-
+    Serial.print("Rear arm switch: ");
+    Serial.print(b_sensor_rearSwitch);
+    Serial.print("  Front arm switch: ");
+    Serial.print(b_sensor_frontSwtich);
+    Serial.print("  Pyramid tipping switch: ");
+    Serial.println(b_sensor_tipSwitch);
 #endif
 
-  //comms port debugging
+    //comms port debugging
 #ifdef debug_communications
-
+    Serial.print("Last message recieved from slave: ");
+    Serial.println(bt_slave_message);
 #endif
-
+  }
 
 }
 
@@ -215,7 +292,7 @@ void loop() {
 // ---------------------------------------------------------------------------------------------------
 
 
-void readslave()
+void readSlave()
 {
   //check for any new messages from the slave comm port
   //also have an interpretation of that message run in here
