@@ -21,24 +21,38 @@
 //#define debug_servos
 //#define debug_limitSwitches
 //#define debug_communications
+const unsigned int cui_debug_displayInterval = 1000; //Time between outputs displayed when debugging is enabled, in ms
 
 
 //Pin mapping
-//SoftwareSerial tellSlave(,); //comm ports with arduino 2 for communication
-const int ci_pin_startButton=7;
-const int ci_pin_charlieplex1=4;
-const int ci_pin_charlieplex2=5;
-const int ci_pin_charlieplex3=6;
-const int ci_pin_charlieplex4=7;
-const int ci_pin_rearArm;
-const int ci_pin_rearHand;
-const int ci_pin_frontArm;
-const int ci_pin_frontHand;
-const int ci_pin_tipArm;
-const int ci_pin_tipPlate;
-const int ci_pin_rearSwitch;
-const int ci_pin_frontSwitch;
-const int ci_pin_tipSwitch;
+SoftwareSerial tellSlave(40, 40); //comm ports with arduino 2 for communication
+const int ci_pin_startButton;
+const int ci_pin_charlieplex1 = A2; //we don't have enough digital pins for everything, so analog is being used as digital
+const int ci_pin_charlieplex2 = A3;
+const int ci_pin_charlieplex3 = A4;
+const int ci_pin_charlieplex4 = A5;
+const int ci_pin_rearArm = 4;
+const int ci_pin_rearHand = 3;
+const int ci_pin_frontArm = 13;
+const int ci_pin_frontHand = 12;
+const int ci_pin_tipArm = 8;
+const int ci_pin_tipPlate = 2;
+const int ci_pin_rearSwitch = 9;
+const int ci_pin_frontSwitch = 10;
+const int ci_pin_tipSwitch = 11;
+
+//charlieplex LED uses, if somebody disagrees with me on assignments, we can change it
+const int ci_charlieplex_followWallParallel = 12; //turned on when tracking parallel to wall
+const int ci_charlieplex_IRsearch = 9; //turned on when scanning/analysing IR and planning path
+const int ci_charlieplex_blindPyramidSearch = 6; //turned on when lost IR, but thinks it knows what to do to find pyramid
+const int ci_charlieplex_hasIR = 3; //turns on when correct IR is picked up, off when lost
+const int ci_charlieplex_foundCube = 11; //on when either arm limit switch is triggered
+const int ci_charlieplex_foundPyramid = 8; //on when pyramid limit switch is triggered
+const int ci_charlieplex_successLight = 2; //turns on when finished course
+const int ci_charlieplex_errorLight = 5; //turns on when some kind of error in code logic happens
+const int ci_charlieplex_AEmode = 10; //on when AE detector, off when IO detector
+const int ci_charlieplex_calibration = 7; //turns on when in middle of a calibration
+//LEDs 1 and 4 still free for stuff
 
 //Data from sensors
 Servo servo_rearArm;
@@ -63,7 +77,7 @@ bool b_startButton_3secTimeUp;
 bool b_startButton_doOnce;
 bool b_main_calibrationStart; //used as a one off variable to start calibration functions, resets to false when idle
 bool b_main_tellSlaveIndexChange; //changes to true when we need to tell the slave a mode change (only tells once)
-unsigned long ul_debug_1secTimer; //used to control debugging outputs to be every 2 seconds, and not constantly
+unsigned long ul_debug_secTimer; //used to control debugging outputs to be every 2 seconds, and not constantly
 
 //debouncing variables
 long l_debouceLimitSwitches_currentmillis;
@@ -136,7 +150,7 @@ void setup() {
   b_servo_frontHandOn = true;
   b_servo_tipArmOn = true;
   b_servo_tipPlateOn = true;
-  ul_debug_1secTimer=0;
+  ul_debug_secTimer = 0;
 
 }
 
@@ -208,8 +222,8 @@ void loop() {
         if (b_startButton_3secTimeUp)
         {
           //calibrate motors
-          //of tell slave to do that
-          i_main_modeIndex = 0;
+          CharliePlexM::Write(ci_charlieplex_calibration, 1); //turn on calibration indicator
+          tellSlave.write(2); //tell slave to do that
         }
         break;
       }
@@ -234,9 +248,9 @@ void loop() {
 
   //debug stuff here
 
-  if (millis() - ul_debug_1secTimer > 2000)
+  if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
-    ul_debug_1secTimer = millis();
+    ul_debug_secTimer = millis();
     //servo debugging
 #ifdef debug_servos
     Serial.print("Rear arm is on: ");
@@ -302,57 +316,95 @@ void readSlave()
   //check for any new messages from the slave comm port
   //also have an interpretation of that message run in here
   //we're getting 1 byte of data, so something to take the number and change whatever variables the meaning affects
+  if (tellSlave.available())
+  {
+    bt_slave_message = tellSlave.read();
 
+    //code to interpret message here
+    //255 is error message?
+    switch (bt_slave_message)
+    {
+      case 0:
+      case 1:
+      case 2:
+      case 3:
+      case 4:
+      case 5:
+      {
+        //case 0-5 reserved for telling mode indicator index
+        //...wait, that only makes sense for the slave hearing from master
+      }
+      case 255: //error message
+      {
+        Serial.println("Error from slave!");
+        CharliePlexM::Write(ci_charlieplex_errorLight, 1);
+        break;
+      }
+      default:
+      {
+        Serial.println("Error: unknown slave message");
+        CharliePlexM::Write(ci_charlieplex_errorLight,1);
+        break;
+      }
+    }
+  }
 }
 
 
 void turnOffAllServos()
 {
   //does as it says
+  //note, due to power draw issues if all 6 (8 if including other arduino) are on at once, keep as many off at once as possible
+  servo_rearArm.detach();
+  servo_rearHand.detach();
+  servo_frontArm.detach();
+  servo_frontHand.detach();
+  servo_tipArm.detach();
+  servo_tipPlate.detach();
 
 }
 
 void limitSwitchDebounce()
 {
   //any readings we get from limit switches have to do through this before we use the
-   if (b_resetDelay ==LOW)
-   { l_debouceLimitSwitches_currentmillis = millis();
-   b_resetDelay=HIGH;
-   }
+  if (b_resetDelay == LOW)
+  { l_debouceLimitSwitches_currentmillis = millis();
+    b_resetDelay = HIGH;
+  }
 
   if ( millis() - l_debouceLimitSwitches_currentmillis > ci_debounceLimitSwitches_delay)
   {
 
     if (  b_sensor_rearSwitchPrev == digitalRead(ci_pin_rearSwitch))
-  {
-    b_sensor_rearSwitch = b_sensor_rearSwitchPrev;
-  }
-  else
-  {
-    b_sensor_rearSwitch = !b_sensor_rearSwitchPrev;
-  }
+    {
+      b_sensor_rearSwitch = b_sensor_rearSwitchPrev;
+    }
+    else
+    {
+      b_sensor_rearSwitch = !b_sensor_rearSwitchPrev;
+    }
 
-  if (  b_sensor_frontSwitchPrev == digitalRead(ci_pin_frontSwitch))
-  {
-    b_sensor_frontSwitch = b_sensor_frontSwitchPrev;
-  }
-  else
-  {
-    b_sensor_frontSwitch = !b_sensor_frontSwitchPrev;
-  }
+    if (  b_sensor_frontSwitchPrev == digitalRead(ci_pin_frontSwitch))
+    {
+      b_sensor_frontSwitch = b_sensor_frontSwitchPrev;
+    }
+    else
+    {
+      b_sensor_frontSwitch = !b_sensor_frontSwitchPrev;
+    }
 
-  if (  b_sensor_tipSwitchPrev == digitalRead(ci_pin_tipSwitch))
-  {
-    b_sensor_tipSwitch = b_sensor_tipSwitchPrev;
-  }
-  else
-  {
-    b_sensor_tipSwitch = !b_sensor_tipSwitchPrev;
-  }
+    if (  b_sensor_tipSwitchPrev == digitalRead(ci_pin_tipSwitch))
+    {
+      b_sensor_tipSwitch = b_sensor_tipSwitchPrev;
+    }
+    else
+    {
+      b_sensor_tipSwitch = !b_sensor_tipSwitchPrev;
+    }
 
-b_resetDelay = LOW;
+    b_resetDelay = LOW;
 
-}
+  }
 
 
 }
@@ -362,9 +414,9 @@ void readLimitSwitches()
   //take sensor readings for all limit switches, should use debounce as part of this function
   b_sensor_rearSwitchPrev = digitalRead(ci_pin_rearSwitch);
   b_sensor_frontSwitchPrev = digitalRead(ci_pin_frontSwitch);
-  
+
   b_sensor_tipSwitchPrev = digitalRead(ci_pin_tipSwitch);
-  
+
   limitSwitchDebounce();
 
 
@@ -425,31 +477,31 @@ void readyPyramid()
   //reason is to prevent driving too far, and have solid surface for limit switch to trigger (not certain if needed, but it shouldnt hurt)
   //also raises plate
   //I reccomend using dropPyramid and raisePlate
-  
+
 }
 
 void dropPlate()
 {
   //drops pyramid plate to position behind pyramid needed to tip pyramid
-  
+
 }
 
 void tipPyramid()
 {
   //turns servo to tip pyramid over
-  
+
 }
 
 void dropPyramid()
 {
   //turns pyramid tipper back, returning pyramid to floor
-  
+
 }
 
 void raisePlate()
 {
   //raises the plate to make room for pyramid to drive in
-  
+
 }
 
 bool wait(unsigned int ui_wait_millisTime)
@@ -457,7 +509,7 @@ bool wait(unsigned int ui_wait_millisTime)
   //returns true when time given after its first call has passed
   //need to set b_wait_start=true before calling... or something. Whoever works on this can figure it out (will probably be me anyway)
   //I think this will be useful to have a function that acts similar to delay, but we can still read sensors and stuff while running a timer
-  
+
 }
 
 
@@ -473,6 +525,6 @@ bool wait(unsigned int ui_wait_millisTime)
 void DANCE()
 {
   //we're done, party! Swing arms around, flash charlieplex randomly, tell slave to drive in circles
-  
+
 }
 
