@@ -50,6 +50,9 @@ Servo servo_tipPlate;
 bool b_sensor_rearSwtich;  //Note: sensor means its a value we can use in rest of code, it has already gone through debouncer
 bool b_sensor_frontSwitch;
 bool b_sensor_tipSwitch;
+bool b_sensor_rearSwtichPrev;
+bool b_sensor_frontSwitchPrev;
+bool b_sensor_tipSwitchPrev;
 byte bt_slave_message; //stores message recieved from the slave arduino 2
 
 //Main loop variables
@@ -63,7 +66,9 @@ bool b_main_tellSlaveIndexChange; //changes to true when we need to tell the sla
 unsigned long ul_debug_1secTimer; //used to control debugging outputs to be every 2 seconds, and not constantly
 
 //debouncing variables
-
+long l_debouceLimitSwitches_currentmillis;
+const int ci_debounceLimitSwitches_delay = 50;
+bool b_resetDelay;
 
 //Servo control variables
 bool b_servo_rearArmOn; //bool variables we use to turn on and off servos, useful for debugging/clean code?
@@ -309,13 +314,59 @@ void turnOffAllServos()
 
 void limitSwitchDebounce()
 {
-  //any readings we get from limit switches have to do through this before we use the value
+  //any readings we get from limit switches have to do through this before we use the
+   if (b_resetDelay ==LOW)
+   { l_debouceLimitSwitches_currentmillis = millis();
+   b_resetDelay=HIGH;
+   }
+
+  if ( millis() - l_debouceLimitSwitches_currentmillis > ci_debounceLimitSwitches_delay)
+  {
+
+    if (  b_sensor_rearSwitchPrev == digitalRead(ci_pin_rearSwitch))
+  {
+    b_sensor_rearSwitch = b_sensor_rearSwitchPrev;
+  }
+  else
+  {
+    b_sensor_rearSwitch = !b_sensor_rearSwitchPrev;
+  }
+
+  if (  b_sensor_frontSwitchPrev == digitalRead(ci_pin_frontSwitch))
+  {
+    b_sensor_frontSwitch = b_sensor_frontSwitchPrev;
+  }
+  else
+  {
+    b_sensor_frontSwitch = !b_sensor_frontSwitchPrev;
+  }
+
+  if (  b_sensor_tipSwitchPrev == digitalRead(ci_pin_tipSwitch))
+  {
+    b_sensor_tipSwitch = b_sensor_tipSwitchPrev;
+  }
+  else
+  {
+    b_sensor_tipSwitch = !b_sensor_tipSwitchPrev;
+  }
+
+b_resetDelay = LOW;
+
+}
+
 
 }
 
 void readLimitSwitches()
 {
   //take sensor readings for all limit switches, should use debounce as part of this function
+  b_sensor_rearSwitchPrev = digitalRead(ci_pin_rearSwitch);
+  b_sensor_frontSwitchPrev = digitalRead(ci_pin_frontSwitch);
+  
+  b_sensor_tipSwitchPrev = digitalRead(ci_pin_tipSwitch);
+  
+  limitSwitchDebounce();
+
 
 }
 
