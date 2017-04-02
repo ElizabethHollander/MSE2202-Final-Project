@@ -25,21 +25,21 @@ const unsigned int cui_debug_displayInterval = 1000; //Time between outputs disp
 
 
 //Pin mapping
-SoftwareSerial tellSlave(5,6); //comm ports with arduino 2 for communication
-const int ci_pin_startButton=A0;
-const int ci_pin_charlieplex1 = A2; //we don't have enough digital pins for everything, so analog is being used as digital
-const int ci_pin_charlieplex2 = A3;
-const int ci_pin_charlieplex3 = A4;
-const int ci_pin_charlieplex4 = A5;
+SoftwareSerial tellSlave(5, 6); //comm ports with arduino 2 for communication
+const int ci_pin_startButton = 7; 
+const int ci_pin_charlieplex1 = 10; 
+const int ci_pin_charlieplex2 = 9;
+const int ci_pin_charlieplex3 = 8;
+const int ci_pin_charlieplex4 = 7;
 const int ci_pin_rearArm = 4;
 const int ci_pin_rearHand = 3;
 const int ci_pin_frontArm = 13;
 const int ci_pin_frontHand = 12;
-const int ci_pin_tipArm = 8;
+const int ci_pin_tipArm = 11;
 const int ci_pin_tipPlate = 2;
-const int ci_pin_rearSwitch = 9;
-const int ci_pin_frontSwitch = 10;
-const int ci_pin_tipSwitch = 11;
+const int ci_pin_rearSwitch = A5; //we don't have enough digital pins for everything, so analog is being used as digital
+const int ci_pin_frontSwitch = A3;
+const int ci_pin_tipSwitch = A3;
 
 //charlieplex LED uses, if somebody disagrees with me on assignments, we can change it
 const int ci_charlieplex_followWallParallel = 12; //turned on when tracking parallel to wall
@@ -91,15 +91,19 @@ bool b_servo_frontArmOn;
 bool b_servo_frontHandOn;
 bool b_servo_tipArmOn;
 bool b_servo_tipPlateOn;
-const int ci_servo_armsUp;  //constant values used to control servo positions, may need to use different for rear and front
-const int ci_servo_armsDown;
+const int ci_servo_rearArmUp = 90; //constant values used to control servo positions, may need to use different for rear and front
+const int ci_servo_frontArmUp = 120;
+const int ci_servo_rearArmDown;
+const int ci_servo_frontArmDown;
 const int ci_servo_rearArmDrop;
 const int ci_servo_frontArmDrop;
-const int ci_servo_openHand;
-const int ci_servo_closeHand;
+const int ci_servo_openRearHand = 45;
+const int ci_servo_closeRearHand = 135;
+const int ci_servo_openFrontHand;
+const int ci_servo_closeFrontHand;
 const int ci_servo_tipPlateUp;
 const int ci_servo_tipPlateDown;
-const int ci_servo_tipArmDown=90;
+const int ci_servo_tipArmDown = 90;
 const int ci_servo_tipArmUp;
 int i_servo_rearArmPos;
 int i_servo_rearHandPos;
@@ -118,7 +122,7 @@ void setup() {
   tellSlave.begin(9600);
 
   //set pinmodes (note servos will be switching throughout code)
-  pinMode(ci_pin_startButton, INPUT_PULLUP);
+  //pinMode(ci_pin_startButton, INPUT_PULLUP);
   pinMode(ci_pin_rearArm, OUTPUT);
   pinMode(ci_pin_rearHand, OUTPUT);
   pinMode(ci_pin_frontArm, OUTPUT);
@@ -206,16 +210,17 @@ void loop() {
     case 0:
       {
         //sits idle, default on start up
-        //servo_tipArm.attach(ci_pin_tipArm);
-        servo_tipPlate.write(18 0);
+        Serial.print("00000");
+        CharliePlexM::Write(5, 1);
         break;
-      } 
+      }
     case 1:
       {
         if (b_startButton_3secTimeUp)
         {
           //course navigation
-          i_main_modeIndex = 0;
+          CharliePlexM::Write(10, 1);
+          //servo_tipPlate.write(120);
         }
         break;
       }
@@ -235,6 +240,7 @@ void loop() {
         {
           //throw in whatever code you want to test but not mess with case 1 here
           //we can probably keep going up in numbers
+          Serial.print("mode 3");
           i_main_modeIndex = 0;
         }
         break;
@@ -242,14 +248,15 @@ void loop() {
     default:
       {
         //you pushed the button too many times
+        Serial.print("too many button pushes");
         i_main_modeIndex = 0;
         break;
       }
   }
 
-b_sensor_rearSwitch=digitalRead(ci_pin_rearSwitch);
-b_sensor_frontSwitch=digitalRead(ci_pin_frontSwitch);
-b_sensor_tipSwitch=digitalRead(ci_pin_tipSwitch);
+  b_sensor_rearSwitch = digitalRead(ci_pin_rearSwitch);
+  b_sensor_frontSwitch = digitalRead(ci_pin_frontSwitch);
+  b_sensor_tipSwitch = digitalRead(ci_pin_tipSwitch);
 
 
   //debug stuff here
@@ -257,6 +264,7 @@ b_sensor_tipSwitch=digitalRead(ci_pin_tipSwitch);
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
+    Serial.println(i_main_modeIndex);
     //servo debugging
 #ifdef debug_servos
     Serial.print("Rear arm is on: ");
@@ -336,22 +344,22 @@ void readSlave()
       case 3:
       case 4:
       case 5:
-      {
-        //case 0-5 reserved for telling mode indicator index
-        //...wait, that only makes sense for the slave hearing from master
-      }
+        {
+          //case 0-5 reserved for telling mode indicator index
+          //...wait, that only makes sense for the slave hearing from master
+        }
       case 255: //error message
-      {
-        Serial.println("Error from slave!");
-        CharliePlexM::Write(ci_charlieplex_errorLight, 1);
-        break;
-      }
+        {
+          Serial.println("Error from slave!");
+          CharliePlexM::Write(ci_charlieplex_errorLight, 1);
+          break;
+        }
       default:
-      {
-        Serial.println("Error: unknown slave message");
-        CharliePlexM::Write(ci_charlieplex_errorLight,1);
-        break;
-      }
+        {
+          Serial.println("Error: unknown slave message");
+          CharliePlexM::Write(ci_charlieplex_errorLight, 1);
+          break;
+        }
     }
   }
 }
@@ -371,7 +379,7 @@ void turnOffAllServos()
 }
 
 /*void limitSwitchDebounce()
-{
+  {
   //any readings we get from limit switches have to do through this before we use the
   if (b_resetDelay == LOW)
   { l_debouceLimitSwitches_currentmillis = millis();
@@ -413,10 +421,10 @@ void turnOffAllServos()
   }
 
 
-}
+  }
 
-void readLimitSwitches()
-{
+  void readLimitSwitches()
+  {
   //take sensor readings for all limit switches, should use debounce as part of this function
   b_sensor_rearSwitchPrev = digitalRead(ci_pin_rearSwitch);
   b_sensor_frontSwitchPrev = digitalRead(ci_pin_frontSwitch);
@@ -426,7 +434,7 @@ void readLimitSwitches()
   limitSwitchDebounce();
 
 
-}
+  }
 */
 void armsUp()
 {

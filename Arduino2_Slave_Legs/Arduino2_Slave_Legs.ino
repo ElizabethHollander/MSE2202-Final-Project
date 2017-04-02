@@ -15,9 +15,6 @@
 #include <I2CEncoder.h>
 #include <SoftwareSerial.h>
 
-I2CEncoder encoder_leftMotor;
-I2CEncoder encoder_rightMotor;
-
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
 #define debug_ultrasonic
@@ -29,7 +26,6 @@ const unsigned int cui_debug_displayInterval = 1000; //time between display on d
 
 
 //Pin mapping
-<<<<<<< HEAD
 SoftwareSerial tellMaster(A2, A3); //comm ports with arduino 2 for communication
 const int ci_pin_usTrigLeftFront = 8; //might want to make this an array instead of 5 seperate variables
 const int ci_pin_usEchoLeftFront = 9;
