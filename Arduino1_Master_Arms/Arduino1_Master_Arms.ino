@@ -19,14 +19,14 @@
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
 //#define debug_servos
-//#define debug_limitSwitches
+#define debug_limitSwitches
 //#define debug_communications
 const unsigned int cui_debug_displayInterval = 1000; //Time between outputs displayed when debugging is enabled, in ms
 
 
 //Pin mapping
-SoftwareSerial tellSlave(40, 40); //comm ports with arduino 2 for communication
-const int ci_pin_startButton;
+SoftwareSerial tellSlave(5,6); //comm ports with arduino 2 for communication
+const int ci_pin_startButton=A0;
 const int ci_pin_charlieplex1 = A2; //we don't have enough digital pins for everything, so analog is being used as digital
 const int ci_pin_charlieplex2 = A3;
 const int ci_pin_charlieplex3 = A4;
@@ -61,7 +61,7 @@ Servo servo_frontArm;
 Servo servo_frontHand;
 Servo servo_tipArm;
 Servo servo_tipPlate;
-bool b_sensor_rearSwtich;  //Note: sensor means its a value we can use in rest of code, it has already gone through debouncer
+bool b_sensor_rearSwitch;  //Note: sensor means its a value we can use in rest of code, it has already gone through debouncer
 bool b_sensor_frontSwitch;
 bool b_sensor_tipSwitch;
 bool b_sensor_rearSwtichPrev;
@@ -99,7 +99,7 @@ const int ci_servo_openHand;
 const int ci_servo_closeHand;
 const int ci_servo_tipPlateUp;
 const int ci_servo_tipPlateDown;
-const int ci_servo_tipArmDown;
+const int ci_servo_tipArmDown=90;
 const int ci_servo_tipArmUp;
 int i_servo_rearArmPos;
 int i_servo_rearHandPos;
@@ -131,11 +131,11 @@ void setup() {
 
   //more initialization
   CharliePlexM::setBtn(ci_pin_charlieplex1, ci_pin_charlieplex2, ci_pin_charlieplex3, ci_pin_charlieplex4, ci_pin_startButton);
-  servo_rearArm.attach(ci_pin_rearArm);
-  servo_rearHand.attach(ci_pin_rearHand);
-  servo_frontArm.attach(ci_pin_frontArm);
-  servo_frontHand.attach(ci_pin_frontHand);
-  servo_tipArm.attach(ci_pin_tipArm);
+  //servo_rearArm.attach(ci_pin_rearArm);
+  //servo_rearHand.attach(ci_pin_rearHand);
+  //servo_frontArm.attach(ci_pin_frontArm);
+  //servo_frontHand.attach(ci_pin_frontHand);
+  //servo_tipArm.attach(ci_pin_tipArm);
   servo_tipPlate.attach(ci_pin_tipPlate);
 
   //initialize variables
@@ -189,8 +189,8 @@ void loop() {
 
 
   //communication with other board all the time, and read all sensors
-  readSlave();
-  readLimitSwitches();
+  //readSlave();
+  //readLimitSwitches();
   if (b_main_tellSlaveIndexChange)
   {
     //tell slave when mode changes
@@ -206,8 +206,10 @@ void loop() {
     case 0:
       {
         //sits idle, default on start up
+        //servo_tipArm.attach(ci_pin_tipArm);
+        servo_tipPlate.write(18 0);
         break;
-      }
+      } 
     case 1:
       {
         if (b_startButton_3secTimeUp)
@@ -245,6 +247,10 @@ void loop() {
       }
   }
 
+b_sensor_rearSwitch=digitalRead(ci_pin_rearSwitch);
+b_sensor_frontSwitch=digitalRead(ci_pin_frontSwitch);
+b_sensor_tipSwitch=digitalRead(ci_pin_tipSwitch);
+
 
   //debug stuff here
 
@@ -270,11 +276,11 @@ void loop() {
     Serial.print("  At position: ");
     Serial.println(i_servo_frontHandPos);
     Serial.print("Tip arm is on: ");
-    Serial.print(b_servo_TipArmOn);
+    Serial.print(b_servo_tipArmOn);
     Serial.print("  At position: ");
     Serial.print(i_servo_tipArmPos);
     Serial.print("     Tip plate is on: ");
-    Serial.print(b_servo_TipPlateOn);
+    Serial.print(b_servo_tipPlateOn);
     Serial.print("  At position: ");
     Serial.println(i_servo_tipPlatePos);
 #endif
@@ -284,7 +290,7 @@ void loop() {
     Serial.print("Rear arm switch: ");
     Serial.print(b_sensor_rearSwitch);
     Serial.print("  Front arm switch: ");
-    Serial.print(b_sensor_frontSwtich);
+    Serial.print(b_sensor_frontSwitch);
     Serial.print("  Pyramid tipping switch: ");
     Serial.println(b_sensor_tipSwitch);
 #endif
@@ -364,7 +370,7 @@ void turnOffAllServos()
 
 }
 
-void limitSwitchDebounce()
+/*void limitSwitchDebounce()
 {
   //any readings we get from limit switches have to do through this before we use the
   if (b_resetDelay == LOW)
@@ -421,7 +427,7 @@ void readLimitSwitches()
 
 
 }
-
+*/
 void armsUp()
 {
   //sets both arms up, in vertical position. Storage? freely roaming areana?

@@ -27,7 +27,7 @@ const unsigned int cui_debug_displayInterval = 1000; //time between display on d
 
 
 //Pin mapping
-SoftwareSerial tellMaster(40, 40); //comm ports with arduino 2 for communication
+SoftwareSerial tellMaster(A2, A3); //comm ports with arduino 2 for communication
 const int ci_pin_usTrigLeftFront = 8; //might want to make this an array instead of 5 seperate variables
 const int ci_pin_usEchoLeftFront = 9;
 const int ci_pin_usTrigLeftRear = 2;
@@ -42,10 +42,10 @@ const int ci_pin_leftMotor = 6; //Left and right motors could be flipped
 const int ci_pin_rightMotor = 7;
 I2CEncoder encoder_leftMotor;
 I2CEncoder encoder_rightMotor;
-//const int ci_I2C_SDA = A4;         // I2C data = white    //these lines may need to be included to make encoders work, idk...
-//const int ci_I2C_SCL = A5;         // I2C clock = yellow
+const int ci_I2C_SDA = A4;         // I2C data = white    //these lines may need to be included to make encoders work, idk...
+const int ci_I2C_SCL = A5;         // I2C clock = yellow
 SoftwareSerial pin_IR(14, 40); //A0 is D14, 40 is non-existant (we only need to read, not write)
-const int ci_pin_IRswitch;
+const int ci_pin_IRswitch=A1;
 
 //Data from sensors
 Servo servo_leftMotor;
@@ -120,6 +120,7 @@ void setup() {
   i_main_modeIndex = 0;
   i_main_courseIndex = 0;
   ul_debug_secTimer = 0;
+  b_motor_enabled=true;
   b_main_modeIndexChange = false;
 
 
