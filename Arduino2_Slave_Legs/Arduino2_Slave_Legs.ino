@@ -15,18 +15,21 @@
 #include <I2CEncoder.h>
 #include <SoftwareSerial.h>
 
+I2CEncoder encoder_leftMotor;
+I2CEncoder encoder_rightMotor;
 
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
-//#define debug_ultrasonic
-#define debug_motors
-#define debug_encoders
+#define debug_ultrasonic
+//#define debug_motors
+//#define debug_encoders
 //#define debug_IR
 //#define debug_communciations
 const unsigned int cui_debug_displayInterval = 1000; //time between display on debug output, in ms
 
 
 //Pin mapping
+<<<<<<< HEAD
 SoftwareSerial tellMaster(A2, A3); //comm ports with arduino 2 for communication
 const int ci_pin_usTrigLeftFront = 8; //might want to make this an array instead of 5 seperate variables
 const int ci_pin_usEchoLeftFront = 9;
@@ -58,6 +61,7 @@ long l_sensor_usRight;
 long l_sensor_usRear;
 long l_sensor_usLeftFront;
 long l_sensor_usLeftRear;
+char c_serial_input;
 
 //Main loop variables
 int i_main_modeIndex;
@@ -88,6 +92,7 @@ byte b_HighByte;
 
 void setup() {
   // put your setup code here, to run once:
+  Wire.begin();
   Serial.begin(9600); //for debugging
   tellMaster.begin(9600);
   pin_IR.begin(2400);
@@ -104,8 +109,9 @@ void setup() {
   pinMode(ci_pin_usTrigRear, OUTPUT);
   pinMode(ci_pin_usEchoRear, INPUT);
   pinMode(ci_pin_IRswitch, INPUT);
-  pinMode(ci_pin_leftMotor, OUTPUT);
   pinMode(ci_pin_rightMotor, OUTPUT);
+  pinMode(ci_pin_leftMotor, OUTPUT);
+
 
   //more initialization
   servo_leftMotor.attach(ci_pin_leftMotor);
@@ -137,15 +143,26 @@ void setup() {
 void loop() {
   // code runs similar to master, instead of button input, gets instructions from serial port
   //reads data from all sensors
-
-  Serial.println("PING");
   //readMaster();
-  //pingAll();
+  pingAll();
   //readIR();
   readEncoders();
   if (Serial.available())
   {
-    i_main_modeIndex = Serial.read();
+    c_serial_input = Serial.read();
+    if (c_serial_input == '1')
+    {
+      i_main_modeIndex = 1;
+    }
+    if (c_serial_input == '2')
+    {
+      i_main_modeIndex = 2;
+    }
+    if (c_serial_input == '3')
+    {
+      i_main_modeIndex = 3;
+    }
+    b_main_modeIndexChange = true;
   }
   switch (i_main_modeIndex)
   {
@@ -251,20 +268,30 @@ void loop() {
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
-
+Serial.print(l_sensor_usRear);
     //ultrasonic debug
 #ifdef debug_ultrasonic
     Serial.println("Debug ultrasonic values:");
     Serial.print("  Front: ");
-    Serial.println(l_sensor_usFront);
+    //Serial.print(l_sensor_usFront);
+    Serial.print("   in cm: ");
+    Serial.println(l_sensor_usFront / 58.2);
     Serial.print("  Rear: ");
-    Serial.println(l_sensor_usRear);
+    //Serial.print((double)l_sensor_usRear);
+    Serial.print("   in cm: ");
+    Serial.println(l_sensor_usRear / 58.2);
     Serial.print("  Left front: ");
-    Serial.println(l_sensor_usLeftFront);
+    Serial.print(l_sensor_usLeftFront);
+    Serial.print("   in cm: ");
+    Serial.println(l_sensor_usLeftFront / 58.2);
     Serial.print("  Left rear: ");
-    Serial.println(l_sensor_usLeftRear);
+    Serial.print(l_sensor_usLeftRear);
+    Serial.print("   in cm: ");
+    Serial.println(l_sensor_usLeftRear / 58.2);
     Serial.print("  Right: ");
-    Serial.println(l_sensor_usRight);
+    Serial.print(l_sensor_usRight);
+    Serial.print("   in cm: ");
+    Serial.println(l_sensor_usRight / 58.2);
 #endif
 
     //motor debugging
@@ -373,7 +400,30 @@ void readMaster()
 void pingAll()
 {
   //reads all ultrasonic values
+  digitalWrite(ci_pin_usTrigFront, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ci_pin_usTrigFront, LOW);
+  l_sensor_usFront = pulseIn(ci_pin_usEchoFront, HIGH);
 
+  digitalWrite(ci_pin_usTrigLeftFront , HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ci_pin_usTrigLeftFront, LOW);
+  l_sensor_usLeftFront = pulseIn(ci_pin_usEchoLeftFront, HIGH);
+
+  digitalWrite(ci_pin_usTrigLeftRear, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ci_pin_usTrigLeftRear, LOW);
+  l_sensor_usLeftRear = pulseIn(ci_pin_usEchoLeftRear, HIGH);
+
+  digitalWrite(ci_pin_usTrigRight, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ci_pin_usTrigRight, LOW);
+  l_sensor_usRight = pulseIn(ci_pin_usEchoRight, HIGH);
+
+  digitalWrite(ci_pin_usTrigRear, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ci_pin_usTrigRear, LOW);
+  l_sensor_usRear = pulseIn(ci_pin_usEchoRear, HIGH);
 }
 
 void readIR()
