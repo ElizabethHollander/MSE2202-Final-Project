@@ -18,16 +18,16 @@
 
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
-//#define debug_servos
-#define debug_limitSwitches
+#define debug_servos
+//#define debug_limitSwitches
 //#define debug_communications
 const unsigned int cui_debug_displayInterval = 1000; //Time between outputs displayed when debugging is enabled, in ms
 
 
 //Pin mapping
 SoftwareSerial tellSlave(5, 6); //comm ports with arduino 2 for communication
-const int ci_pin_startButton = 7; 
-const int ci_pin_charlieplex1 = 10; 
+const int ci_pin_startButton = 7;
+const int ci_pin_charlieplex1 = 10;
 const int ci_pin_charlieplex2 = 9;
 const int ci_pin_charlieplex3 = 8;
 const int ci_pin_charlieplex4 = 7;
@@ -39,7 +39,7 @@ const int ci_pin_tipArm = 11;
 const int ci_pin_tipPlate = 2;
 const int ci_pin_rearSwitch = A5; //we don't have enough digital pins for everything, so analog is being used as digital
 const int ci_pin_frontSwitch = A3;
-const int ci_pin_tipSwitch = A3;
+const int ci_pin_tipSwitch = A4;
 
 //charlieplex LED uses, if somebody disagrees with me on assignments, we can change it
 const int ci_charlieplex_followWallParallel = 12; //turned on when tracking parallel to wall
@@ -52,7 +52,8 @@ const int ci_charlieplex_successLight = 2; //turns on when finished course
 const int ci_charlieplex_errorLight = 5; //turns on when some kind of error in code logic happens
 const int ci_charlieplex_AEmode = 10; //on when AE detector, off when IO detector
 const int ci_charlieplex_calibration = 7; //turns on when in middle of a calibration
-//LEDs 1 and 4 still free for stuff
+const int ci_charlieplex_setupLight = 1; //turns on when set up is initiating
+//LED 4 still free for stuff, 1 can also blink or something for re-use
 
 //Data from sensors
 Servo servo_rearArm;
@@ -92,25 +93,31 @@ bool b_servo_frontHandOn;
 bool b_servo_tipArmOn;
 bool b_servo_tipPlateOn;
 const int ci_servo_rearArmUp = 90; //constant values used to control servo positions, may need to use different for rear and front
-const int ci_servo_frontArmUp = 120;
+const int ci_servo_frontArmUp = 100;
 const int ci_servo_rearArmDown;
 const int ci_servo_frontArmDown;
 const int ci_servo_rearArmDrop;
 const int ci_servo_frontArmDrop;
-const int ci_servo_openRearHand = 45;
-const int ci_servo_closeRearHand = 135;
-const int ci_servo_openFrontHand;
-const int ci_servo_closeFrontHand;
-const int ci_servo_tipPlateUp;
-const int ci_servo_tipPlateDown;
+const int ci_servo_rearHandOpen = 45;
+const int ci_servo_rearHandClose = 140;
+const int ci_servo_frontHandOpen = 140;
+const int ci_servo_frontHandClose = 52;
+const int ci_servo_tipPlateUp = 20;
+const int ci_servo_tipPlateDown = 105;
 const int ci_servo_tipArmDown = 90;
-const int ci_servo_tipArmUp;
+const int ci_servo_tipArmUp = 140;
 int i_servo_rearArmPos;
 int i_servo_rearHandPos;
 int i_servo_frontArmPos;
 int i_servo_frontHandPos;
 int i_servo_tipArmPos;
 int i_servo_tipPlatePos;
+unsigned int ui_servo_waitTime; //time in ms to wait after telling a servo to move
+
+//placing cube under pyramid variables
+int i_pyramid_index;
+unsigned long ul_pyramid_timer; //used to wait for servos after each command before detaching and moving them on
+unsigned int ui_pyramid_cubeDropTime; //time to wait after realeasing cube to dropping pyramid
 
 //keep adding varibles you need in cadegories labeled like this
 
@@ -135,12 +142,7 @@ void setup() {
 
   //more initialization
   CharliePlexM::setBtn(ci_pin_charlieplex1, ci_pin_charlieplex2, ci_pin_charlieplex3, ci_pin_charlieplex4, ci_pin_startButton);
-  //servo_rearArm.attach(ci_pin_rearArm);
-  //servo_rearHand.attach(ci_pin_rearHand);
-  //servo_frontArm.attach(ci_pin_frontArm);
-  //servo_frontHand.attach(ci_pin_frontHand);
-  //servo_tipArm.attach(ci_pin_tipArm);
-  servo_tipPlate.attach(ci_pin_tipPlate);
+  CharliePlexM::Write(1, 1); //turn on LED to tell when booting up, may take awhile due to delay times
 
   //initialize variables
   i_main_modeIndex = 0;
@@ -148,14 +150,46 @@ void setup() {
   b_startButton_doOnce = false;
   b_startButton_3secTimeUp = false;
   b_main_tellSlaveIndexChange = true;
-  b_servo_rearArmOn = true;
-  b_servo_rearHandOn = true;
-  b_servo_frontArmOn = true;
-  b_servo_frontHandOn = true;
-  b_servo_tipArmOn = true;
-  b_servo_tipPlateOn = true;
+  b_servo_rearArmOn = false;
+  b_servo_rearHandOn = false;
+  b_servo_frontArmOn = false;
+  b_servo_frontHandOn = false;
+  b_servo_tipArmOn = false;
+  b_servo_tipPlateOn = false;
   ul_debug_secTimer = 0;
+  ui_servo_waitTime = 2500;
+  i_pyramid_index=0;
+  ui_pyramid_cubeDropTime = 5000;
 
+
+  //sets servos to desired position
+  //delay is used because this is 1 time set up, only cycles once, but we have to let minimal servos on at one time
+  servo_rearArm.attach(ci_pin_rearArm);
+  servo_rearHand.attach(ci_pin_rearHand);
+  servo_rearArm.write(ci_servo_rearArmUp);
+  servo_rearHand.write(ci_servo_rearHandOpen);
+  delay(ui_servo_waitTime);
+  servo_rearArm.detach();
+  servo_rearHand.detach();
+
+  servo_frontArm.attach(ci_pin_frontArm);
+  servo_frontHand.attach(ci_pin_frontHand);
+  servo_frontArm.write(ci_servo_frontArmUp);
+  servo_frontHand.write(ci_servo_frontHandOpen);
+  delay(ui_servo_waitTime);
+  servo_frontArm.detach();
+  servo_frontHand.detach();
+
+  servo_tipArm.attach(ci_pin_tipArm);
+  servo_tipPlate.attach(ci_pin_tipPlate);
+  servo_tipArm.write(ci_servo_tipArmDown);
+  servo_tipPlate.write(ci_servo_tipPlateUp);
+  delay(ui_servo_waitTime);
+  servo_tipArm.detach();
+  servo_tipPlate.detach();
+
+  //end of set up
+  CharliePlexM::Write(1, 0);
 }
 
 void loop() {
@@ -210,8 +244,7 @@ void loop() {
     case 0:
       {
         //sits idle, default on start up
-        Serial.print("00000");
-        CharliePlexM::Write(5, 1);
+        turnOffAllServos();
         break;
       }
     case 1:
@@ -219,8 +252,14 @@ void loop() {
         if (b_startButton_3secTimeUp)
         {
           //course navigation
-          CharliePlexM::Write(10, 1);
-          //servo_tipPlate.write(120);
+          //currently just closes servo hands
+          b_servo_frontHandOn=true;
+          b_servo_rearHandOn=true;
+          i_servo_frontHandPos=ci_servo_frontHandClose;
+          i_servo_rearHandPos=ci_servo_rearHandClose;
+          
+          //b_servo_tipArmOn=true;
+          //i_servo_tipArmPos=140;
         }
         break;
       }
@@ -240,8 +279,8 @@ void loop() {
         {
           //throw in whatever code you want to test but not mess with case 1 here
           //we can probably keep going up in numbers
-          Serial.print("mode 3");
-          i_main_modeIndex = 0;
+          placeCube(); //current testing
+          //i_main_modeIndex = 0;
         }
         break;
       }
@@ -258,13 +297,14 @@ void loop() {
   b_sensor_frontSwitch = digitalRead(ci_pin_frontSwitch);
   b_sensor_tipSwitch = digitalRead(ci_pin_tipSwitch);
 
+  moveServos(); //tells the servos that are turned on to move to desired position, also auto turns them off (according to a bool for on off and int for position)
+
 
   //debug stuff here
 
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
-    Serial.println(i_main_modeIndex);
     //servo debugging
 #ifdef debug_servos
     Serial.print("Rear arm is on: ");
@@ -369,13 +409,37 @@ void turnOffAllServos()
 {
   //does as it says
   //note, due to power draw issues if all 6 (8 if including other arduino) are on at once, keep as many off at once as possible
-  servo_rearArm.detach();
-  servo_rearHand.detach();
-  servo_frontArm.detach();
-  servo_frontHand.detach();
-  servo_tipArm.detach();
-  servo_tipPlate.detach();
 
+  if (b_servo_rearArmOn)
+  {
+    servo_rearArm.detach();
+    b_servo_rearArmOn = false;
+  }
+  if (b_servo_rearHandOn)
+  {
+    servo_rearHand.detach();
+    b_servo_rearHandOn = false;
+  }
+  if (b_servo_frontArmOn)
+  {
+    servo_frontArm.detach();
+    b_servo_frontArmOn = false;
+  }
+  if (b_servo_frontHandOn)
+  {
+    servo_frontHand.detach();
+    b_servo_frontHandOn = false;
+  }
+  if (b_servo_tipArmOn)
+  {
+    servo_tipArm.detach();
+    b_servo_tipArmOn = false;
+  }
+  if (b_servo_tipPlateOn)
+  {
+    servo_tipPlate.detach();
+    b_servo_tipPlateOn = false;
+  }
 }
 
 /*void limitSwitchDebounce()
@@ -436,52 +500,100 @@ void turnOffAllServos()
 
   }
 */
-void armsUp()
+
+void moveServos()
 {
-  //sets both arms up, in vertical position. Storage? freely roaming areana?
+  //writes position to servos, when active
+  if (b_servo_rearArmOn)
+  {
+    if (!servo_rearArm.attached())
+    {
+      //nothing currently attached, add servo
+      servo_rearArm.attach(ci_pin_rearArm);
+    }
+    //write desired position to servo
+    servo_rearArm.write(i_servo_rearArmPos);
+  }
+  else if (servo_rearArm.attached())
+  {
+    //also updates to detach servo when bool changed to false
+    servo_rearArm.detach();
+  }
 
-}
+  if (b_servo_rearHandOn)
+  {
+    if (!servo_rearHand.attached())
+    {
+      //nothing currently attached, add servo
+      servo_rearHand.attach(ci_pin_rearHand);
+    }
+    //write desired position to servo
+    servo_rearHand.write(i_servo_rearHandPos);
+  }
+  else if (servo_rearHand.attached())
+  {
+    servo_rearHand.detach();
+  }
 
-void rearArmDown()
-{
-  //sets the rear arm at wall height, and the front arm up
+  if (b_servo_frontArmOn)
+  {
+    if (!servo_frontArm.attached())
+    {
+      //nothing currently attached, add servo
+      servo_frontArm.attach(ci_pin_frontArm);
+    }
+    //write desired position to servo
+    servo_frontArm.write(i_servo_frontArmPos);
+  }
+  else if (servo_frontArm.attached())
+  {
+    servo_frontArm.detach();
+  }
 
-}
+  if (b_servo_frontHandOn)
+  {
+    if (!servo_frontHand.attached())
+    {
+      //nothing currently attached, add servo
+      servo_frontHand.attach(ci_pin_frontHand);
+    }
+    //write desired position to servo
+    servo_frontHand.write(i_servo_frontHandPos);
+  }
+  else if (servo_frontHand.attached())
+  {
+    servo_frontHand.detach();
+  }
 
-void frontArmDown()
-{
-  //sets the front arm on wall height and raises rear arm
+  if (b_servo_tipArmOn)
+  {
+    if (!servo_tipArm.attached())
+    {
+      //nothing currently attached, add servo
+      servo_tipArm.attach(ci_pin_tipArm);
+    }
+    //write desired position to servo
+    servo_tipArm.write(i_servo_tipArmPos);
+  }
+  else if (servo_tipArm.attached())
+  {
+    servo_tipArm.detach();
+  }
 
-}
-
-void openHands()
-{
-  //opens hands on both arms,should be >180 deg, I'm thinking 225 deg?
-
-}
-
-void closeRearHand()
-{
-  //closes rear hand to grab cube
-
-}
-
-void closeFrontHand()
-{
-  //closes front hand to grab cube
-
-}
-
-void rearArmOverChute()
-{
-  //moves rear arm over chute, moves front to up to prevent collision
-
-}
-
-void frontArmOverChute()
-{
-  //moves front arm over chute position, and rear to up for no collision
-
+  if (b_servo_tipPlateOn)
+  {
+    if (!servo_tipPlate.attached())
+    {
+      //nothing currently attached, add servo
+      servo_tipPlate.attach(ci_pin_tipPlate);
+    }
+    //write desired position to servo
+    servo_tipPlate.write(i_servo_tipPlatePos);
+  }
+  else if (servo_tipPlate.attached())
+  {
+    servo_tipPlate.detach();
+  }
 }
 
 void readyPyramid()
@@ -494,37 +606,122 @@ void readyPyramid()
 
 }
 
-void dropPlate()
+void placeCube()
 {
-  //drops pyramid plate to position behind pyramid needed to tip pyramid
+  //final function call in course navigation
+  //assuming pyramid in place, it drops plate, tips pyramid, releases cube and releases pyramid
+  switch (i_pyramid_index)
+  {
+    case 0:
+      {
+        //drop plate
+        b_servo_tipPlateOn = true;
+        i_servo_tipPlatePos = ci_servo_tipPlateDown;
+        ul_pyramid_timer = millis();
+        i_pyramid_index++;
+        break;
+      }
+    case 1:
+      {
+        //timer for tip plate to get in position
+        if (millis() - ul_pyramid_timer > ui_servo_waitTime)
+        {
+          i_pyramid_index++;
+        }
+        break;
+      }
+    case 2:
+      {
+        //tip pyramid with arm
+        b_servo_tipArmOn = true;
+        i_servo_tipArmPos = ci_servo_tipArmUp;
+        ul_pyramid_timer = millis();
+        i_pyramid_index++;
+        break;
+      }
+    case 3:
+      {
+        //timer that pyramid was tipped
+        if (millis() - ul_pyramid_timer > ui_servo_waitTime)
+        {
+          i_pyramid_index++;
+        }
+        break;
+      }
+    case 4:
+      {
+        //drop cube
+        i_servo_rearHandPos = ci_servo_rearHandOpen; //write both open, only one will be on from holding the cube
+        i_servo_frontHandPos = ci_servo_frontHandOpen;
+        ul_pyramid_timer = millis();
+        i_pyramid_index++;
+        break;
+      }
+    case 5:
+      {
+        //wait for cube to get under pyramid
+        if (millis() - ul_pyramid_timer > ui_pyramid_cubeDropTime)
+        {
+          b_servo_rearHandOn = false; //turn off hand motors, no longer needed
+          b_servo_frontHandOn = false;
+          i_pyramid_index++;
+        }
+        break;
+      }
+    case 6:
+      {
+        //drop pyramid
+        i_servo_tipArmPos = ci_servo_tipArmDown; //already true from earlier
+        ul_pyramid_timer = millis();
+        i_pyramid_index++;
+        break;
+      }
+    case 7:
+      {
+        //wait for pyramid to drop
+        if (millis() - ul_pyramid_timer > ui_servo_waitTime)
+        {
+          b_servo_tipArmOn = false; //done using tip arm, turn off
+          i_pyramid_index++;
+        }
+        break;
+      }
+    case 8:
+      {
+        //raise plate up
+        i_servo_tipPlatePos = ci_servo_tipPlateUp;
+        ul_pyramid_timer = millis();
+        i_pyramid_index++;
+        break;
+      }
+    case 9:
+      {
+        //wait for plate to raise
+        if (millis() - ul_pyramid_timer > ui_servo_waitTime)
+        {
+          b_servo_tipPlateOn = false;
+          i_pyramid_index++;
+        }
+        break;
+      }
+    case 10:
+      {
+        //completed course, awaiting reset
+        CharliePlexM::Write(ci_charlieplex_successLight,1);
+        Serial.println("COURSE COMPLETE");
+        break;
+      }
+    default:
+      {
+        //error
+        CharliePlexM::Write(ci_charlieplex_errorLight, 1);
+        Serial.println("Error: unknown pyramid drop index");
+        break;
+      }
 
+  }
 }
 
-void tipPyramid()
-{
-  //turns servo to tip pyramid over
-
-}
-
-void dropPyramid()
-{
-  //turns pyramid tipper back, returning pyramid to floor
-
-}
-
-void raisePlate()
-{
-  //raises the plate to make room for pyramid to drive in
-
-}
-
-bool wait(unsigned int ui_wait_millisTime)
-{
-  //returns true when time given after its first call has passed
-  //need to set b_wait_start=true before calling... or something. Whoever works on this can figure it out (will probably be me anyway)
-  //I think this will be useful to have a function that acts similar to delay, but we can still read sensors and stuff while running a timer
-
-}
 
 
 // --------------------------------------------------------------------------------------------------
