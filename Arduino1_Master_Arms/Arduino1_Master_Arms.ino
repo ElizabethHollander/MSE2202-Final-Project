@@ -21,7 +21,6 @@
 #define debug_servos
 //#define debug_limitSwitches
 //#define debug_communications
-#define using_debug_value
 const unsigned int cui_debug_displayInterval = 1000; //Time between outputs displayed when debugging is enabled, in ms
 
 
@@ -114,18 +113,14 @@ int i_servo_frontHandPos;
 int i_servo_tipArmPos;
 int i_servo_tipPlatePos;
 unsigned int ui_servo_waitTime; //time in ms to wait after telling a servo to move
-int i_testing_intval;
 
 //placing cube under pyramid variables
 int i_pyramid_index;
 unsigned long ul_pyramid_timer; //used to wait for servos after each command before detaching and moving them on
 unsigned int ui_pyramid_cubeDropTime; //time to wait after realeasing cube to dropping pyramid
 
-//Grabbing cube off wall variables
-int i_cubegrab_index;
-unsigned long ul_cubegrab_timer;
-
 //keep adding varibles you need in cadegories labeled like this
+
 
 void setup() {
   // put your setup code here, to run once:
@@ -163,9 +158,8 @@ void setup() {
   b_servo_tipPlateOn = false;
   ul_debug_secTimer = 0;
   ui_servo_waitTime = 2500;
-  i_pyramid_index = 0;
+  i_pyramid_index=0;
   ui_pyramid_cubeDropTime = 5000;
-  i_cubegrab_index = 0;
 
 
   //sets servos to desired position
@@ -199,7 +193,6 @@ void setup() {
 }
 
 void loop() {
-
   // Button presses (affects i_main_modeIndex)
   // 0 = idle
   // 1 = run main program
@@ -260,11 +253,11 @@ void loop() {
         {
           //course navigation
           //currently just closes servo hands
-          b_servo_frontHandOn = true;
-          b_servo_rearHandOn = true;
-          i_servo_frontHandPos = ci_servo_frontHandClose;
-          i_servo_rearHandPos = ci_servo_rearHandClose;
-
+          b_servo_frontHandOn=true;
+          b_servo_rearHandOn=true;
+          i_servo_frontHandPos=ci_servo_frontHandClose;
+          i_servo_rearHandPos=ci_servo_rearHandClose;
+          
           //b_servo_tipArmOn=true;
           //i_servo_tipArmPos=140;
         }
@@ -284,14 +277,6 @@ void loop() {
       {
         if (b_startButton_3secTimeUp)
         {
-          if (!b_servo_rearArmOn)
-          {
-            b_servo_rearArmOn = true;
-          }
-          if (!b_servo_rearHandOn)
-          {
-            b_servo_rearHandOn = true;
-          }
           //throw in whatever code you want to test but not mess with case 1 here
           //we can probably keep going up in numbers
           placeCube(); //current testing
@@ -316,12 +301,6 @@ void loop() {
 
 
   //debug stuff here
-#ifdef using_debug_value
-  if (Serial.available())
-  {
-    i_testing_intval = Serial.read();
-  }
-#endif
 
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
@@ -373,6 +352,9 @@ void loop() {
 
 }
 
+
+
+
 // --------------------------------------------------------------------------------------------------
 //
 // Just putting a break on code, scrolling outside of void tends to happen a lot and having
@@ -382,73 +364,7 @@ void loop() {
 //
 // ---------------------------------------------------------------------------------------------------
 
-/*making a bunch of functions that activate and deactivate the servos, and change their respective booleans at the same time to reduce human error
-  //if compilation size becomes too big a problem they can be removed
-  //took a closer look at home code was working, and these are not nessicary
-  void attachFrontArm()
-  {
-	servo_frontArm.attach(ci_pin_frontArm);
-	b_servo_frontArmOn = true;
-  }
 
-  void attachRearArm()
-  {
-	servo_rearArm.attach(ci_pin_rearArm);
-	b_servo_frontArmOn = true;
-  }
-
-  void attachFrontHand() {
-	servo_frontHand.attach(ci_pin_frontHand);
-	b_servo_frontHandOn = true;
-  }
-
-  void attachRearHand() {
-	servo_rearHand.attach(ci_pin_rearHand);
-	b_servo_rearHandOn = true;
-  }
-
-  void attachTipPlate() {
-	servo_tipPlate.attach(ci_pin_tipPlate);
-	b_servo_tipPlateOn = true;
-  }
-
-  void attachTipArm() {
-	servo_tipArm.attach(ci_pin_tipArm);
-	b_servo_tipArmOn = true;
-  }
-
-  void detachFrontArm()
-  {
-	servo_frontArm.detach();
-	b_servo_frontArmOn = false;
-  }
-
-  void detachRearArm()
-  {
-	servo_rearArm.detach();
-	b_servo_frontArmOn = false;
-  }
-
-  void detachFrontHand() {
-	servo_frontHand.detach();
-	b_servo_frontHandOn = false;
-  }
-
-  void detachRearHand() {
-	servo_rearHand.detach();
-	b_servo_rearHandOn = false;
-  }
-
-  void detachTipPlate() {
-	servo_tipPlate.detach();
-	b_servo_tipPlateOn = false;
-  }
-
-  void detachTipArm() {
-	servo_tipArm.detach();
-	b_servo_tipArmOn = false;
-  }
-*/
 void readSlave()
 {
   //check for any new messages from the slave comm port
@@ -487,6 +403,7 @@ void readSlave()
     }
   }
 }
+
 
 void turnOffAllServos()
 {
@@ -733,24 +650,6 @@ void placeCube()
       }
     case 4:
       {
-        //ensure arms are in correct position, only the arm that is active should move
-        i_servo_rearArmPos = i_testing_intval;
-        i_servo_frontArmPos = ci_servo_frontArmDrop;
-        ul_pyramid_timer = millis();
-        i_pyramid_index++;
-        break;
-      }
-    case 5:
-      {
-        //timer that arms got there
-        if (millis() - ul_pyramid_timer > ui_servo_waitTime)
-        {
-          i_pyramid_index++;
-        }
-        break;
-      }
-    case 6:
-      {
         //drop cube
         i_servo_rearHandPos = ci_servo_rearHandOpen; //write both open, only one will be on from holding the cube
         i_servo_frontHandPos = ci_servo_frontHandOpen;
@@ -758,7 +657,7 @@ void placeCube()
         i_pyramid_index++;
         break;
       }
-    case 7:
+    case 5:
       {
         //wait for cube to get under pyramid
         if (millis() - ul_pyramid_timer > ui_pyramid_cubeDropTime)
@@ -769,7 +668,7 @@ void placeCube()
         }
         break;
       }
-    case 8:
+    case 6:
       {
         //drop pyramid
         i_servo_tipArmPos = ci_servo_tipArmDown; //already true from earlier
@@ -777,7 +676,7 @@ void placeCube()
         i_pyramid_index++;
         break;
       }
-    case 9:
+    case 7:
       {
         //wait for pyramid to drop
         if (millis() - ul_pyramid_timer > ui_servo_waitTime)
@@ -787,7 +686,7 @@ void placeCube()
         }
         break;
       }
-    case 10:
+    case 8:
       {
         //raise plate up
         i_servo_tipPlatePos = ci_servo_tipPlateUp;
@@ -795,7 +694,7 @@ void placeCube()
         i_pyramid_index++;
         break;
       }
-    case 11:
+    case 9:
       {
         //wait for plate to raise
         if (millis() - ul_pyramid_timer > ui_servo_waitTime)
@@ -805,10 +704,10 @@ void placeCube()
         }
         break;
       }
-    case 12:
+    case 10:
       {
         //completed course, awaiting reset
-        CharliePlexM::Write(ci_charlieplex_successLight, 1);
+        CharliePlexM::Write(ci_charlieplex_successLight,1);
         Serial.println("COURSE COMPLETE");
         break;
       }
@@ -823,19 +722,7 @@ void placeCube()
   }
 }
 
-bool Click_n_GrabCube() {
-  switch (i_cubegrab_index)
-  {
-    case 0:
-      {
-        if (b_sensor_rearSwitch) {
-          i_cubegrab_index++;
-        }
-        break;
-      }
 
-  }
-}
 
 // --------------------------------------------------------------------------------------------------
 //
@@ -843,6 +730,8 @@ bool Click_n_GrabCube() {
 // Any functions you have to make, please add them above this break (unless the function is also non-manditory)
 //
 // ---------------------------------------------------------------------------------------------------
+
+
 
 void DANCE()
 {
