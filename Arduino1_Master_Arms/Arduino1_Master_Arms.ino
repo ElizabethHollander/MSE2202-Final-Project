@@ -77,8 +77,12 @@ unsigned long ul_startButton_3secTime; //startButton stuff is used to count butt
 bool b_startButton_3secTimeUp;
 bool b_startButton_doOnce;
 bool b_main_calibrationStart; //used as a one off variable to start calibration functions, resets to false when idle
-bool b_main_tellSlaveIndexChange; //changes to true when we need to tell the slave a mode change (only tells once)
 unsigned long ul_debug_secTimer; //used to control debugging outputs to be every 2 seconds, and not constantly
+
+//communications with slave variables
+bool b_slave_isFinished; //toggles to true when slave sends 1, false after something has been done about that
+int i_slave_modeIndex; //keep track of index number slave has responded with, saying that its on
+int i_slave_courseIndex;
 
 //debouncing variables
 long l_debouceLimitSwitches_currentmillis;
@@ -97,7 +101,7 @@ const int ci_servo_frontArmUp = 100;
 const int ci_servo_rearArmDown;
 const int ci_servo_frontArmDown;
 const int ci_servo_rearArmDrop;
-const int ci_servo_frontArmDrop;
+const int ci_servo_frontArmDrop = 85;
 const int ci_servo_rearHandOpen = 45;
 const int ci_servo_rearHandClose = 140;
 const int ci_servo_frontHandOpen = 140;
@@ -149,7 +153,6 @@ void setup() {
   ul_startButton_3secTime = 0;
   b_startButton_doOnce = false;
   b_startButton_3secTimeUp = false;
-  b_main_tellSlaveIndexChange = true;
   b_servo_rearArmOn = false;
   b_servo_rearHandOn = false;
   b_servo_frontArmOn = false;
@@ -158,8 +161,12 @@ void setup() {
   b_servo_tipPlateOn = false;
   ul_debug_secTimer = 0;
   ui_servo_waitTime = 2500;
-  i_pyramid_index=0;
+  i_pyramid_index = 0;
   ui_pyramid_cubeDropTime = 5000;
+  b_slave_isFinished = false;
+  bt_slave_message = 0; //just to stop early errors
+  i_slave_modeIndex = -1; //giving impossible value to prevent false assumption errors
+  i_slave_courseIndex = -1;
 
 
   //sets servos to desired position
@@ -203,7 +210,6 @@ void loop() {
   if ((millis() - ul_startButton_3secTime) > 3000)
   {
     b_startButton_3secTimeUp = true;
-    b_main_tellSlaveIndexChange = true;
   }
 
   // button-based mode selection
@@ -225,16 +231,9 @@ void loop() {
   }
 
 
-
   //communication with other board all the time, and read all sensors
-  //readSlave();
+  readSlave();
   //readLimitSwitches();
-  if (b_main_tellSlaveIndexChange)
-  {
-    //tell slave when mode changes
-    b_main_tellSlaveIndexChange = false;
-    //figure out comminication code/language and tell slave desired message
-  }
 
 
   //main switch statement to drive mode that is operating in
@@ -244,22 +243,40 @@ void loop() {
     case 0:
       {
         //sits idle, default on start up
+        if (i_slave_modeIndex != 0)
+        {
+          //untill acknowledgement, tell slave that it is in idle mode
+          tellSlave.write(2);
+        }
         turnOffAllServos();
         break;
       }
     case 1:
       {
+
         if (b_startButton_3secTimeUp)
         {
-          //course navigation
-          //currently just closes servo hands
-          b_servo_frontHandOn=true;
-          b_servo_rearHandOn=true;
-          i_servo_frontHandPos=ci_servo_frontHandClose;
-          i_servo_rearHandPos=ci_servo_rearHandClose;
-          
-          //b_servo_tipArmOn=true;
-          //i_servo_tipArmPos=140;
+          if (i_slave_modeIndex != 1)
+          {
+            tellSlave.write(3); //tell slave its in main course
+          }
+          else
+          {
+            //don't do stuff if write is occuring (softwareserial library has issues)
+
+            //course navigation
+            //currently just closes servo hands
+            //b_servo_frontHandOn = true;
+            b_servo_rearHandOn = true;
+            //i_servo_frontHandPos = ci_servo_frontHandClose;
+            i_servo_rearHandPos = ci_servo_rearHandOpen;
+
+            //b_servo_tipArmOn = true;
+            //i_servo_tipArmPos = ci_servo_tipArmUp;
+
+            b_servo_rearArmOn = true;
+            i_servo_rearArmPos = 20;
+          }
         }
         break;
       }
@@ -269,7 +286,17 @@ void loop() {
         {
           //calibrate motors
           CharliePlexM::Write(ci_charlieplex_calibration, 1); //turn on calibration indicator
-          tellSlave.write(2); //tell slave to do that
+          if (i_slave_modeIndex != 2)
+          {
+            //if slave didn't give confirmation, tell it to
+            tellSlave.write(4); //tell slave to go to calibration
+          }
+          if (b_slave_isFinished)
+          {
+            //calibration complete, back to main
+            CharliePlexM::Write(ci_charlieplex_calibration, 0);
+            i_main_modeIndex = 0;
+          }
         }
         break;
       }
@@ -278,8 +305,16 @@ void loop() {
         if (b_startButton_3secTimeUp)
         {
           //throw in whatever code you want to test but not mess with case 1 here
-          //we can probably keep going up in numbers
-          placeCube(); //current testing
+          if (i_slave_modeIndex != 3)
+          {
+            //tell slave to go in testing mode until aknowledged
+            tellSlave.write(5);
+          }
+          else
+          {
+            //current testing function
+            placeCube();
+          }
           //i_main_modeIndex = 0;
         }
         break;
@@ -305,6 +340,8 @@ void loop() {
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
+    Serial.println(i_pyramid_index);
+    CharliePlexM::Write(ci_charlieplex_errorLight, 0); //turn off the error light after a while so we know if error is still happening
     //servo debugging
 #ifdef debug_servos
     Serial.print("Rear arm is on: ");
@@ -370,23 +407,56 @@ void readSlave()
   //check for any new messages from the slave comm port
   //also have an interpretation of that message run in here
   //we're getting 1 byte of data, so something to take the number and change whatever variables the meaning affects
+
+  b_slave_isFinished = false; //default sets to false, if true, will change for one loop then go back to false
+
   if (tellSlave.available())
   {
     bt_slave_message = tellSlave.read();
-
     //code to interpret message here
     //255 is error message?
     switch (bt_slave_message)
     {
       case 0:
+        //default empty
+        break;
       case 1:
+        {
+          //slave tells that it has finished its task
+          b_slave_isFinished = true;
+          bt_slave_message = 0; //clears receiving the message
+          break;
+        }
       case 2:
       case 3:
       case 4:
       case 5:
         {
-          //case 0-5 reserved for telling mode indicator index
-          //...wait, that only makes sense for the slave hearing from master
+          //case 2-5 reserved for telling mode indicator index, map to 0-3
+          //now using these to indicate slave has confirmation of command
+          i_slave_modeIndex=bt_slave_message-2;
+          break;
+        }
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 14:
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+        case 19:
+        case 20:
+        {
+          //case 6-20 is to indicate progress though course index
+          //master recieves slave's confirmation signal
+          i_slave_courseIndex=bt_slave_message-6;
+          break;
         }
       case 255: //error message
         {
@@ -707,7 +777,7 @@ void placeCube()
     case 10:
       {
         //completed course, awaiting reset
-        CharliePlexM::Write(ci_charlieplex_successLight,1);
+        CharliePlexM::Write(ci_charlieplex_successLight, 1);
         Serial.println("COURSE COMPLETE");
         break;
       }

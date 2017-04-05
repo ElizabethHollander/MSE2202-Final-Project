@@ -17,16 +17,16 @@
 
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
-#define debug_ultrasonic
+//#define debug_ultrasonic
 //#define debug_motors
 //#define debug_encoders
 //#define debug_IR
-//#define debug_communciations
+#define debug_communciations
 const unsigned int cui_debug_displayInterval = 1000; //time between display on debug output, in ms
 
 
 //Pin mapping
-SoftwareSerial tellMaster(A2, A3); //comm ports with arduino 2 for communication
+SoftwareSerial tellMaster(16, 17); //comm ports with arduino 2 for communication, A2 and A3
 const int ci_pin_usTrigLeftFront = 8; //might want to make this an array instead of 5 seperate variables
 const int ci_pin_usEchoLeftFront = 9;
 const int ci_pin_usTrigLeftRear = 2;
@@ -44,7 +44,8 @@ I2CEncoder encoder_rightMotor;
 const int ci_I2C_SDA = A4;         // I2C data = white    //these lines may need to be included to make encoders work, idk...
 const int ci_I2C_SCL = A5;         // I2C clock = yellow
 SoftwareSerial pin_IR(14, 40); //A0 is D14, 40 is non-existant (we only need to read, not write)
-const int ci_pin_IRswitch=A1;
+const int ci_pin_IRswitch = A1;
+
 
 //Data from sensors
 Servo servo_leftMotor;
@@ -74,7 +75,7 @@ unsigned int ui_motor_leftOffset;
 unsigned int ui_motor_rightOffset;
 unsigned int ui_motor_rightSpeed; //set this to change how fast the motors are going
 unsigned int ui_motor_leftSpeed;
-bool b_motor_enabled; //will not alter motor speeds unless true
+bool b_motor_enabled; //will tell if motors are attached or detached
 long l_motor_leftPosition;
 long l_motor_rightPosition;
 
@@ -85,6 +86,12 @@ const int ci_Right_Motor_Offset_Address_L = 14;
 const int ci_Right_Motor_Offset_Address_H = 15;
 byte b_LowByte;
 byte b_HighByte;
+
+//variables used in communicating with master
+byte bt_master_lastMessage;
+bool b_master_newCommand; //true when issuing command from master has changed, false if same as last cycle
+
+
 
 void setup() {
   // put your setup code here, to run once:
@@ -122,8 +129,9 @@ void setup() {
   i_main_modeIndex = 0;
   i_main_courseIndex = 0;
   ul_debug_secTimer = 0;
-  b_motor_enabled=true;
+  b_motor_enabled = true;
   b_main_modeIndexChange = false;
+
 
 
   //eeprom set up for motors offset
@@ -139,27 +147,12 @@ void setup() {
 void loop() {
   // code runs similar to master, instead of button input, gets instructions from serial port
   //reads data from all sensors
-  //readMaster();
-  pingAll();
+  readMaster();
+  //pingAll();
   //readIR();
-  readEncoders();
-  if (Serial.available())
-  {
-    c_serial_input = Serial.read();
-    if (c_serial_input == '1')
-    {
-      i_main_modeIndex = 1;
-    }
-    if (c_serial_input == '2')
-    {
-      i_main_modeIndex = 2;
-    }
-    if (c_serial_input == '3')
-    {
-      i_main_modeIndex = 3;
-    }
-    b_main_modeIndexChange = true;
-  }
+  //readEncoders();
+
+
   switch (i_main_modeIndex)
   {
     case 0:
@@ -206,9 +199,8 @@ void loop() {
     case 2:
       {
         //calibrate motors
-        if (b_main_modeIndexChange)
+        if (b_master_newCommand)
         {
-          b_main_modeIndexChange = false;
           encoder_leftMotor.zero();
           encoder_rightMotor.zero();
           ul_main_calibrationTime = millis();
@@ -240,20 +232,22 @@ void loop() {
           EEPROM.write(ci_Right_Motor_Offset_Address_H, highByte(ui_motor_rightOffset));
           EEPROM.write(ci_Left_Motor_Offset_Address_L, lowByte(ui_motor_leftOffset));
           EEPROM.write(ci_Left_Motor_Offset_Address_H, highByte(ui_motor_leftOffset));
+          
+          detachMotors();
+          tellMaster.write(1); //tell master that it is done calibrating
+          Serial.println("DONE CAL");
         }
         break;
       }
     case 3:
       {
         //extra for testing or something
-        attachMotors();
-        servo_leftMotor.writeMicroseconds(cui_motor_forwardSpeed);
+ 
         break;
       }
     default:
       {
         //this really shouldn't be possible, something is broken
-        tellMaster.write(255);
         Serial.println("ERROR unknown mode index");
         break;
       }
@@ -264,16 +258,16 @@ void loop() {
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
-Serial.print(l_sensor_usRear);
+    Serial.println(i_main_modeIndex);
     //ultrasonic debug
 #ifdef debug_ultrasonic
     Serial.println("Debug ultrasonic values:");
     Serial.print("  Front: ");
-    //Serial.print(l_sensor_usFront);
+    Serial.print(l_sensor_usFront);
     Serial.print("   in cm: ");
     Serial.println(l_sensor_usFront / 58.2);
     Serial.print("  Rear: ");
-    //Serial.print((double)l_sensor_usRear);
+    Serial.print(l_sensor_usRear);
     Serial.print("   in cm: ");
     Serial.println(l_sensor_usRear / 58.2);
     Serial.print("  Left front: ");
@@ -292,7 +286,7 @@ Serial.print(l_sensor_usRear);
 
     //motor debugging
 #ifdef debug_motors
-    Serial.print("Motors enabled: ");
+    Serial.print("Motors attached: ");
     Serial.println(b_motor_enabled);
     Serial.print("Left motor speed: ");
     Serial.print(ui_motor_leftSpeed);
@@ -329,6 +323,10 @@ Serial.print(l_sensor_usRear);
 #ifdef debug_communciations
     Serial.print("Last message recieved from master: ");
     Serial.println(bt_master_message);
+    Serial.print("Message recieved before that: ");
+    Serial.println(bt_master_lastMessage);
+    Serial.print("New message: ");
+    Serial.println(b_master_newCommand);
 #endif
 
   }
@@ -351,23 +349,45 @@ void readMaster()
   //check for any new messages from the master comm port
   //also have an interpretation of that message run in here
   //we're getting 1 byte of data, so something to take the number and change whatever variables the meaning affects
+
+  b_master_newCommand = false; //set to false by default, will change to true if new command comes
+
+  if (!tellMaster.isListening())
+  {
+    //only one software serial available at a time, make sure it is listening
+    tellMaster.listen();
+  }
   if (tellMaster.available())
   {
+    bt_master_lastMessage = bt_master_message;
     bt_master_message = tellMaster.read();
+
+    //check and toggle if message has changed
+    if (bt_master_lastMessage != bt_master_message)
+    {
+      //got a new message
+      //sends confirmation once
+      b_master_newCommand = true;
+      tellMaster.write(bt_master_message); //sends a confirmation to master that it got message
+    }
 
     //code to interpret message here
     //255 is error message?
     switch (bt_master_message)
     {
       case 0:
+        //default empty
+        break;
       case 1:
+        //reserved for slave to tell master when it has finished a task
+        break;
       case 2:
       case 3:
       case 4:
       case 5:
         {
-          //case 0-5 reserved for telling mode indicator index
-          i_main_modeIndex = bt_master_message;
+          //case 2-5 reserved for telling mode indicator index, map to 0-3
+          i_main_modeIndex = bt_master_message - 2;
           break;
         }
       case 6:
@@ -425,10 +445,17 @@ void pingAll()
 void readIR()
 {
   //takes IR reading
+  if (!pin_IR.isListening())
+  {
+    //only one software serial can run at a time, must listen to one we want
+    pin_IR.listen();
+  }
   if (pin_IR.available())
   {
     bt_sensor_IR = pin_IR.read();
   }
+
+  tellMaster.listen(); //only need IR reading when we read it, communication from master can come at any point and we should leave the port free as much as possible
 }
 
 void pingDebounce()

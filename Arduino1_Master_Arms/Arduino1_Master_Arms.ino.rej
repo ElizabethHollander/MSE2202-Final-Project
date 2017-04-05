@@ -1,0 +1,9 @@
+diff a/Arduino1_Master_Arms/Arduino1_Master_Arms.ino b/Arduino1_Master_Arms/Arduino1_Master_Arms.ino	(rejected hunks)
+@@ -21,6 +21,7 @@
+ #define debug_servos
+ //#define debug_limitSwitches
+ //#define debug_communications
++#define using_debug_value
+ const unsigned int cui_debug_displayInterval = 1000; //Time between outputs displayed when debugging is enabled, in ms
+ 
+ 
