@@ -18,10 +18,10 @@
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
 //#define debug_ultrasonic
-//#define debug_motors
-//#define debug_encoders
+#define debug_motors
+#define debug_encoders
 //#define debug_IR
-#define debug_communciations
+//#define debug_communciations
 const unsigned int cui_debug_displayInterval = 1000; //time between display on debug output, in ms
 
 
@@ -66,20 +66,28 @@ int i_main_courseIndex;
 unsigned long ul_debug_secTimer;
 bool b_main_modeIndexChange; //similar to calibration variable in master, make true whenever new modeIndex comes through com port
 unsigned long ul_main_calibrationTime; //used for calibrating motors
+bool b_main_motorCalForward; //determines direction of calibration, flips after each calibration
 
 //Motor speed variables
-const unsigned int cui_motor_forwardSpeed = 2000;
-const unsigned int cui_motor_reverseSpeed;
+const unsigned int cui_motor_forwardSpeed = 1900;
+const unsigned int cui_motor_reverseSpeed = 1300;
 const unsigned int cui_motor_stop = 1500;
 unsigned int ui_motor_leftOffset;
 unsigned int ui_motor_rightOffset;
+unsigned int ui_motor_leftOffsetBack;
+unsigned int ui_motor_rightOffsetBack;
 unsigned int ui_motor_rightSpeed; //set this to change how fast the motors are going
 unsigned int ui_motor_leftSpeed;
-bool b_motor_enabled; //will tell if motors are attached or detached
+bool b_motor_attached; //will tell if motors are attached or detached
+bool b_motor_changeEnabled; //true when adjusting motor speeds will do something
 long l_motor_leftPosition;
 long l_motor_rightPosition;
 
 //EEPROM stuff for calibration of motors
+const int ci_Left_Motor_Offset_Address_L_Back = 8;
+const int ci_Left_Motor_Offset_Address_H_Back = 9;
+const int ci_Right_Motor_Offset_Address_L_Back = 10;
+const int ci_Right_Motor_Offset_Address_H_Back = 11;
 const int ci_Left_Motor_Offset_Address_L = 12;
 const int ci_Left_Motor_Offset_Address_H = 13;
 const int ci_Right_Motor_Offset_Address_L = 14;
@@ -129,9 +137,11 @@ void setup() {
   i_main_modeIndex = 0;
   i_main_courseIndex = 0;
   ul_debug_secTimer = 0;
-  b_motor_enabled = true;
+  b_motor_attached = true;
   b_main_modeIndexChange = false;
-
+  b_motor_attached = true;
+  b_motor_changeEnabled = false;
+  b_main_motorCalForward = true;
 
 
   //eeprom set up for motors offset
@@ -142,6 +152,13 @@ void setup() {
   b_HighByte = EEPROM.read(ci_Right_Motor_Offset_Address_H);
   ui_motor_rightOffset = word(b_HighByte, b_LowByte);
 
+  b_LowByte = EEPROM.read(ci_Left_Motor_Offset_Address_L_Back);
+  b_HighByte = EEPROM.read(ci_Left_Motor_Offset_Address_H_Back);
+  ui_motor_leftOffsetBack = word(b_HighByte, b_LowByte);
+  b_LowByte = EEPROM.read(ci_Right_Motor_Offset_Address_L_Back);
+  b_HighByte = EEPROM.read(ci_Right_Motor_Offset_Address_H_Back);
+  ui_motor_rightOffsetBack = word(b_HighByte, b_LowByte);
+
 }
 
 void loop() {
@@ -149,7 +166,7 @@ void loop() {
   //reads data from all sensors
   readMaster();
   //pingAll();
-  //readIR();
+  readIR();
   //readEncoders();
 
 
@@ -189,7 +206,6 @@ void loop() {
           default:
             {
               //mis-communication or something to cause error
-              //tellMaster.write(255);
               Serial.println("Error! unknown courseIndex");
               break;
             }
@@ -198,51 +214,100 @@ void loop() {
       }
     case 2:
       {
-        //calibrate motors
-        if (b_master_newCommand)
+        //calibrate motors, direction determined
+        if (b_main_motorCalForward)
         {
-          encoder_leftMotor.zero();
-          encoder_rightMotor.zero();
-          ul_main_calibrationTime = millis();
-          attachMotors();
-          servo_leftMotor.writeMicroseconds(cui_motor_forwardSpeed);
-          servo_rightMotor.writeMicroseconds(cui_motor_forwardSpeed);
-        }
-        else if ((millis() - ul_main_calibrationTime) > 5000)
-        {
-          servo_leftMotor.writeMicroseconds(cui_motor_stop);
-          servo_rightMotor.writeMicroseconds(cui_motor_stop);
-          l_motor_leftPosition = encoder_leftMotor.getRawPosition();
-          l_motor_rightPosition = encoder_rightMotor.getRawPosition();
-          if (l_motor_leftPosition > l_motor_rightPosition)
+          if (b_master_newCommand)
           {
-            // May have to update this if different calibration time is used
-            //these may need updating since its a different bot at a different speed that's running this
-            ui_motor_rightOffset = 0;
-            ui_motor_leftOffset = (l_motor_leftPosition - l_motor_rightPosition) / 4;
+            encoder_leftMotor.zero();
+            encoder_rightMotor.zero();
+            ul_main_calibrationTime = millis();
+            attachMotors();
+            servo_leftMotor.writeMicroseconds(cui_motor_forwardSpeed);
+            servo_rightMotor.writeMicroseconds(cui_motor_forwardSpeed);
           }
-          else
+          else if ((millis() - ul_main_calibrationTime) > 5000)
           {
-            // May have to update this if different calibration time is used
-            ui_motor_rightOffset = (l_motor_rightPosition - l_motor_leftPosition) / 4;
-            ui_motor_leftOffset = 0;
-          }
+            servo_leftMotor.writeMicroseconds(cui_motor_stop);
+            servo_rightMotor.writeMicroseconds(cui_motor_stop);
+            l_motor_leftPosition = encoder_leftMotor.getRawPosition();
+            l_motor_rightPosition = encoder_rightMotor.getRawPosition();
+            if (l_motor_leftPosition > l_motor_rightPosition)
+            {
+              // May have to update this if different calibration time is used
+              //these may need updating since its a different bot at a different speed that's running this
+              ui_motor_rightOffset = 0;
+              ui_motor_leftOffset = (l_motor_leftPosition - l_motor_rightPosition) / 4;
+            }
+            else
+            {
+              // May have to update this if different calibration time is used
+              ui_motor_rightOffset = (l_motor_rightPosition - l_motor_leftPosition) / 4;
+              ui_motor_leftOffset = 0;
+            }
 
-          EEPROM.write(ci_Right_Motor_Offset_Address_L, lowByte(ui_motor_rightOffset));
-          EEPROM.write(ci_Right_Motor_Offset_Address_H, highByte(ui_motor_rightOffset));
-          EEPROM.write(ci_Left_Motor_Offset_Address_L, lowByte(ui_motor_leftOffset));
-          EEPROM.write(ci_Left_Motor_Offset_Address_H, highByte(ui_motor_leftOffset));
-          
-          detachMotors();
-          tellMaster.write(1); //tell master that it is done calibrating
-          Serial.println("DONE CAL");
+            EEPROM.write(ci_Right_Motor_Offset_Address_L, lowByte(ui_motor_rightOffset));
+            EEPROM.write(ci_Right_Motor_Offset_Address_H, highByte(ui_motor_rightOffset));
+            EEPROM.write(ci_Left_Motor_Offset_Address_L, lowByte(ui_motor_leftOffset));
+            EEPROM.write(ci_Left_Motor_Offset_Address_H, highByte(ui_motor_leftOffset));
+
+            b_main_motorCalForward = false;
+            ul_main_calibrationTime=millis(); //this is to prevent immediate skipping through reverse mode
+            detachMotors();
+            tellMaster.write(1); //tell master that it is done calibrating
+          }
+        }
+        else
+        {
+          if (b_master_newCommand)
+          {
+            encoder_leftMotor.zero();
+            encoder_rightMotor.zero();
+            ul_main_calibrationTime = millis();
+            attachMotors();
+            servo_leftMotor.writeMicroseconds(cui_motor_reverseSpeed);
+            servo_rightMotor.writeMicroseconds(cui_motor_reverseSpeed);
+          }
+          else if ((millis() - ul_main_calibrationTime) > 5000)
+          {
+            servo_leftMotor.writeMicroseconds(cui_motor_stop);
+            servo_rightMotor.writeMicroseconds(cui_motor_stop);
+            l_motor_leftPosition = encoder_leftMotor.getRawPosition();
+            l_motor_rightPosition = encoder_rightMotor.getRawPosition();
+            if (l_motor_leftPosition > l_motor_rightPosition)
+            {
+              // May have to update this if different calibration time is used
+              //these may need updating since its a different bot at a different speed that's running this
+              ui_motor_rightOffsetBack = 0;
+              ui_motor_leftOffsetBack = (l_motor_leftPosition - l_motor_rightPosition) / 4;
+            }
+            else
+            {
+              // May have to update this if different calibration time is used
+              ui_motor_rightOffsetBack = (l_motor_rightPosition - l_motor_leftPosition) / 4;
+              ui_motor_leftOffsetBack = 0;
+            }
+
+            EEPROM.write(ci_Right_Motor_Offset_Address_L_Back, lowByte(ui_motor_rightOffsetBack));
+            EEPROM.write(ci_Right_Motor_Offset_Address_H_Back, highByte(ui_motor_rightOffsetBack));
+            EEPROM.write(ci_Left_Motor_Offset_Address_L_Back, lowByte(ui_motor_leftOffsetBack));
+            EEPROM.write(ci_Left_Motor_Offset_Address_H_Back, highByte(ui_motor_leftOffsetBack));
+
+            b_main_motorCalForward = true;
+            ul_main_calibrationTime=millis(); //this is to prevent immediate skipping through forward mode
+            detachMotors();
+            tellMaster.write(1); //tell master that it is done calibrating
+          }
         }
         break;
       }
     case 3:
       {
         //extra for testing or something
- 
+        attachMotors();
+        b_motor_changeEnabled = true;
+        //driveForwards();
+        driveBackwards();
         break;
       }
     default:
@@ -287,15 +352,19 @@ void loop() {
     //motor debugging
 #ifdef debug_motors
     Serial.print("Motors attached: ");
-    Serial.println(b_motor_enabled);
+    Serial.println(b_motor_attached);
     Serial.print("Left motor speed: ");
     Serial.print(ui_motor_leftSpeed);
     Serial.print("   Offset: ");
-    Serial.println(ui_motor_leftOffset);
+    Serial.print(ui_motor_leftOffset);
+    Serial.print("   Rev Offset: ");
+    Serial.println(ui_motor_leftOffsetBack);
     Serial.print("Right motor speed: ");
     Serial.print(ui_motor_rightSpeed);
     Serial.print("   Offset: ");
-    Serial.println(ui_motor_rightOffset);
+    Serial.print(ui_motor_rightOffset);
+    Serial.print("   Rev Offset: ");
+    Serial.println(ui_motor_rightOffsetBack);
 #endif
 
     //encoder debugging
@@ -496,35 +565,54 @@ void detachMotors()
 {
   //detaches the two motors, use when idle for instructions
   //important to detach motors to minimize power use
-  if (b_motor_enabled)
+  if (b_motor_attached)
   {
     servo_rightMotor.detach();
     servo_leftMotor.detach();
-    b_motor_enabled = false;
+    b_motor_attached = false;
   }
 }
 
 void attachMotors()
 {
   //reattaches motors, use this before motor use
-  if (!b_motor_enabled)
+  if (!b_motor_attached)
   {
     servo_rightMotor.attach(ci_pin_rightMotor);
     servo_leftMotor.attach(ci_pin_leftMotor);
-    b_motor_enabled = true;
+    b_motor_attached = true;
+  }
+}
+
+void driveMotors()
+{
+  //actually sets motor speeds to be custom
+  if (b_motor_attached && b_motor_changeEnabled)
+  {
+    servo_leftMotor.writeMicroseconds(ui_motor_leftSpeed + ui_motor_leftOffset);
+    servo_rightMotor.writeMicroseconds(ui_motor_rightSpeed + ui_motor_rightOffset);
   }
 }
 
 void driveForwards()
 {
   //drive in a straight line forwards
-
+  if (b_motor_attached && b_motor_changeEnabled)
+  {
+    //only drive if both true
+    servo_leftMotor.writeMicroseconds(constrain(cui_motor_forwardSpeed + ui_motor_leftOffset, 1600, 2100));
+    servo_rightMotor.writeMicroseconds(constrain(cui_motor_forwardSpeed + ui_motor_rightOffset, 1600, 2100));
+  }
 }
 
 void driveBackwards()
 {
   //drive in a straight line backwards
-
+  if (b_motor_attached && b_motor_changeEnabled)
+  {
+    servo_leftMotor.writeMicroseconds(constrain(cui_motor_reverseSpeed + ui_motor_leftOffsetBack, 300, 1400));
+    servo_rightMotor.writeMicroseconds((cui_motor_reverseSpeed + ui_motor_rightOffsetBack, 300, 1400));
+  }
 }
 
 void followWall()
@@ -555,6 +643,10 @@ void stopMotors()
 {
   //stop motor movement
   //may not need to be a function, can be a bool locking movement, similar to linefollower
+  if (b_motor_attached)
+  {
+
+  }
 
 }
 
