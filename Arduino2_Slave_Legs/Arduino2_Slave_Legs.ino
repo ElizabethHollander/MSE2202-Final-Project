@@ -17,10 +17,10 @@
 
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
-//#define debug_ultrasonic
+#define debug_ultrasonic
 //#define debug_motors
 //#define debug_encoders
-#define debug_IR
+//#define debug_IR
 #define debug_communciations
 const unsigned int cui_debug_displayInterval = 1000; //time between display on debug output, in ms
 
@@ -126,6 +126,14 @@ bool b_switch_currentState;
 unsigned long ul_switch_debounceTimer;
 const int ci_switch_debounceTime = 20; //time to wait after state change to update
 
+//pyramid locating variables, and IR interpreting stuff
+const int ci_pyramid_minEncoderAngle; //minimum encoder angle between scanning for IR
+bool b_ir_goodSign; //is the current IR reading what we are looking for?
+int i_pyramid_locateIndex;
+long l_pyramid_mirrorFront;
+long l_pyramid_mirrorRear;
+
+
 //wall following variables
 const int ci_wall_rearTargetDis = 290; //use to keep wall following parallel
 const int ci_wall_frontTargetDis = 360;
@@ -174,8 +182,8 @@ void setup() {
   b_motor_attached = true;
   b_motor_changeEnabled = false;
   b_main_motorCalForward = true;
-  d_us_tolerence = 1.2; //this must be greater than 1 for ultrasonic readings to make sense
-
+  d_us_tolerence = 1.5; //this must be greater than 1 for ultrasonic readings to make sense
+  i_pyramid_locateIndex = 0;
 
 
   //eeprom set up for motors offset
@@ -246,7 +254,7 @@ void loop() {
           case 3:
             {
               //search for pyramid
-
+              findPyramid();
               break;
             }
           default:
@@ -350,15 +358,21 @@ void loop() {
     case 3:
       {
         //extra for testing or something
-        attachMotors();
-        b_motor_changeEnabled = true;
-        //driveForwards();
+//        attachMotors();
+//        b_motor_changeEnabled = true;
+//        driveForwards();
+//        delay(3000);
+//        stopMotors();
+//        delay(3000);
         //driveBackwards();
         //ui_motor_leftSpeed=1000;
         //ui_motor_rightSpeed=2000;
         //driveMotors();
-        followWall();
+        //followWall();
         //rotateClockwise();
+        //findPyramid();
+
+        
         break;
       }
     default:
@@ -458,7 +472,7 @@ void loop() {
 
 
 
-// --------------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------------
 //
 // Just putting a break on code, scrolling outside of void tends to happen a lot and having
 // a break between void and our functions is helpful.
@@ -480,6 +494,7 @@ void readMaster()
 
   if (tellMaster.available())
   {
+    Serial.println("ping5.1-------------------------------------------------------------------");
     bt_master_lastMessage = bt_master_message;
     bt_master_message = tellMaster.read();
     Serial.println("ping6");
@@ -497,6 +512,8 @@ void readMaster()
 
     //code to interpret message here
     //255 is error message?
+    if(b_master_newCommand)
+    {
     switch (bt_master_message)
     {
       case 0:
@@ -534,8 +551,10 @@ void readMaster()
           break;
         }
     }
+    }
     Serial.println("ping9");
   }
+  tellMaster.write(bt_master_message);
 }
 
 void pingAll()
@@ -621,6 +640,27 @@ void readIR()
     bt_sensor_IR = Serial.read();
   }
   Serial.println("ping15");
+
+  //update if looking at good IR or not
+  if (b_sensor_IRswitch)
+  {
+    if ((bt_sensor_IR == 65) || (bt_sensor_IR == 69))
+    {
+      b_ir_goodSign = true;
+    }
+    else
+      b_ir_goodSign = false;
+  }
+  else
+  {
+    if ((bt_sensor_IR == 73) || (bt_sensor_IR == 79))
+    {
+      b_ir_goodSign = true;
+    }
+    else
+      b_ir_goodSign = false;
+  }
+
 
 }
 
@@ -776,31 +816,32 @@ void followWall()
   ui_motor_leftSpeed = cui_motor_forwardSpeed + ui_motor_leftOffset;
   ui_motor_rightSpeed = cui_motor_forwardSpeed + ui_motor_rightOffset;
 
-  if (b_us_leftFrontIsTrue)
+  if (b_us_leftFrontIsTrue && ((l_sensor_usLeftFront > ci_wall_frontTargetDis + ci_wall_tolerenceDis) || (l_sensor_usLeftFront < ci_wall_frontTargetDis - ci_wall_tolerenceDis)))
   { //check value is not nonsense
     if (l_sensor_usLeftFront > ci_wall_frontTargetDis + ci_wall_tolerenceDis)
     {
       //front corner too far away, slow down right wheel
-      ui_motor_leftSpeed -= 100;
+      ui_motor_leftSpeed -= 200;
     }
     if (l_sensor_usLeftFront < ci_wall_frontTargetDis - ci_wall_tolerenceDis)
     {
       //front is too close to wall, slow down left wheel
-      ui_motor_rightSpeed -= 100;
+      ui_motor_rightSpeed -= 200;
     }
+    Serial.println("ping34");
   }
-  Serial.println("ping34");
-  if (b_us_leftRearIsTrue)
+
+  else if (b_us_leftRearIsTrue && ((l_sensor_usLeftRear > ci_wall_rearTargetDis + ci_wall_tolerenceDis) || (l_sensor_usLeftRear < ci_wall_rearTargetDis - ci_wall_tolerenceDis)))
   {
     if (l_sensor_usLeftRear > ci_wall_rearTargetDis + ci_wall_tolerenceDis)
     {
       //rear corner too far, slow down left
-      ui_motor_rightSpeed -= 100;
+      ui_motor_rightSpeed -= 200;
     }
     if (l_sensor_usLeftRear < ci_wall_rearTargetDis - ci_wall_tolerenceDis)
     {
       //rear corner too close, slow down right
-      ui_motor_leftSpeed -= 100;
+      ui_motor_leftSpeed -= 200;
     }
   }
   Serial.println("ping35");
@@ -814,15 +855,91 @@ void followWall()
   driveMotors();
   Serial.println("ping35");
   //safety check that end was not hit
-  if (b_us_frontIsTrue)
+  //if (b_us_frontIsTrue)
   {
     //its a reliable reading
-    if (l_sensor_usFront < 240)
+    if (l_sensor_usFront < 300)
     {
       //right in front of wall, stop motors, return to index 0, tell master, wait for further instruction
       stopMotors();
+      detachMotors();
       i_main_courseIndex = 0;
       tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      tellMaster.write(1);
+      
     }
   }
   Serial.println("ping36");
@@ -894,6 +1011,81 @@ void findPyramid()
 {
   //shell function, called once trying to trackdown pyramid, possibly after doing initial wall swivel
   //or call once cube is found, but have a do once thing to include it
+  attachMotors();
+  switch (i_pyramid_locateIndex)
+  {
+    case 0:
+      {
+        //just starting to locate
+        encoder_leftMotor.zero();
+        encoder_rightMotor.zero();
+        i_pyramid_locateIndex++;
+      }
+    case 1:
+      {
+        //starts facing along left wall rotate outwards
+        b_motor_changeEnabled = true;
+        ui_motor_leftSpeed = cui_motor_reverseSpeed;
+        ui_motor_rightSpeed = cui_motor_forwardSpeed;
+        driveMotors();
+        i_pyramid_locateIndex++;
+        break;
+      }
+    case 2:
+      {
+        //check if found good IR signal
+        if (b_ir_goodSign)
+        {
+          stopMotors();
+          i_pyramid_locateIndex++;
+        }
+        break;
+      }
+    case 3:
+      {
+        //drive until wall is hit
+        driveForwards();
+        if (b_us_frontIsTrue && (l_sensor_usFront < 300))
+        {
+          stopMotors();
+          i_pyramid_locateIndex++;
+        }
+        break;
+      }
+    case 4:
+      {
+        //record ultrasonic positions to mirror
+        if (b_us_leftFrontIsTrue && b_us_leftRearIsTrue)
+        {
+          //only get values and continue with reliable data
+          l_pyramid_mirrorFront = l_sensor_usLeftFront;
+          l_pyramid_mirrorRear = l_sensor_usLeftRear;
+          i_pyramid_locateIndex++;
+        }
+        break;
+      }
+    case 5:
+      {
+        //rotate clockwise along wall
+        b_motor_changeEnabled = true;
+        ui_motor_leftSpeed = cui_motor_reverseSpeed;
+        ui_motor_rightSpeed = cui_motor_forwardSpeed;
+        driveMotors();
+        i_pyramid_locateIndex++;
+        break;
+      }
+    case 6:
+      {
+        //enable IR to stop rotation when mirror is close
+        if ((l_pyramid_mirrorRear - 100 > l_sensor_usLeftFront) && (l_pyramid_mirrorFront + 100 < l_sensor_usLeftRear))
+        {
+          //mirroring is close, enable IR check again
+          i_pyramid_locateIndex = 2;
+          //entire code loops, by properties of reflections, we should find the pyramid eventually
+        }
+        break;
+      }
+  }
 
 }
 

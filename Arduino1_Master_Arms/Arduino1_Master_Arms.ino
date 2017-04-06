@@ -65,6 +65,8 @@ bool b_sensor_rearSwitch;  //Note: sensor means its a value we can use in rest o
 bool b_sensor_frontSwitch;
 bool b_sensor_tipSwitch;
 byte bt_slave_message; //stores message recieved from the slave arduino 2
+byte bt_slave_lastMessage;
+bool b_slave_newCommand;
 
 //Main loop variables
 int i_main_modeIndex; //switch statement to tell what is going on will use this variable (sit idle, course navigation, calibration, etc)
@@ -80,7 +82,7 @@ bool b_cube_rearPossession;
 bool b_slave_isFinished; //toggles to true when slave sends 1, false after something has been done about that
 int i_slave_modeIndex; //keep track of index number slave has responded with, saying that its on
 int i_slave_courseIndex;
-
+int i_slave_commsindex;
 //limit switch reading variables
 bool b_switch_rearCurrent;
 bool b_switch_frontCurrent;
@@ -263,6 +265,7 @@ void loop() {
           Serial.println("ping13");
           //untill acknowledgement, tell slave that it is in idle mode
           tellSlave.write(2);
+          //i_slave_commsindex = 2;
           Serial.println("ping14");
         }
         Serial.println("ping15");
@@ -279,7 +282,8 @@ void loop() {
           if (i_slave_modeIndex != 1)
           {
             Serial.println("ping18");
-            tellSlave.write(3); //tell slave its in main course
+            tellSlave.write(3);
+            //i_slave_commsindex = 3; //tell slave its in main course
 
             Serial.println("ping19");
           }
@@ -328,13 +332,28 @@ void loop() {
                   if (i_slave_courseIndex != 1)
                   {
                     tellSlave.write(7);
+                    //i_slave_commsindex = 7;
                     Serial.println("ping27");
                   }
-                  
+
                   else
                     i_main_courseIndex++;
                   Serial.println("ping28");
                   //no break intentional
+                  if (b_sensor_rearSwitch)
+                  {
+                    //found cube
+                    tellSlave.write(8);
+                    i_main_courseIndex = 8;
+                    b_cube_rearPossession = true;
+                  }
+                  else if (b_slave_isFinished)
+                  {
+                    //slave ran out of wall to follow, switch to reverse
+                    i_main_courseIndex = 4;
+                  }
+                  Serial.println("ping30");
+                  break;
                 }
               case 3:
                 {
@@ -343,6 +362,7 @@ void loop() {
                   if (b_sensor_rearSwitch)
                   {
                     //found cube
+                    tellSlave.write(8);
                     i_main_courseIndex = 8;
                     b_cube_rearPossession = true;
                   }
@@ -390,6 +410,7 @@ void loop() {
                   if (i_slave_courseIndex != 2)
                   {
                     tellSlave.write(8);
+                    //i_slave_commsindex = 8;
                     Serial.println("ping36");
                   }
 
@@ -405,6 +426,7 @@ void loop() {
                   if (b_sensor_frontSwitch)
                   {
                     //found cube
+                    tellSlave.write(8);
                     i_main_courseIndex = 8;
                     b_cube_rearPossession = false;
                     Serial.println("ping39");
@@ -413,47 +435,13 @@ void loop() {
                   {
                     Serial.println("ping40");
                     //slave ran out of wall to follow, switch back to forwards
+
                     i_main_courseIndex = 0;
                   }
                   break;
                 }
+
               case 8:
-                {
-                  //found a cube, get slave to stop moving
-                  if (i_slave_courseIndex != 0)
-                  {
-                    Serial.println("ping41");
-                    tellSlave.write(6);
-                    Serial.println("ping42");
-                  }
-                  else
-                  {
-                    //slave acknowledges and is stopped
-                    i_main_courseIndex++;
-                    Serial.println("ping43");
-                  }
-                  break;
-                }
-              case 9:
-                {
-                  //check that we still have cube
-                  if (b_cube_rearPossession && (!b_sensor_rearSwitch))
-                  {
-                    //there is a problem
-                    Serial.print("ERROR: CUBE SHOULD BE IN SWITCH BUT IS GONE");
-                    CharliePlexM::Write(ci_charlieplex_errorLight, 1);
-                  }
-                  if ((!b_cube_rearPossession) && (!b_sensor_frontSwitch))
-                  {
-                    //there is a problem
-                    Serial.print("ERROR: CUBE SHOULD BE IN FRONT SWITCH BUT IS MISSING");
-                    CharliePlexM::Write(ci_charlieplex_errorLight, 1);
-                  }
-                  //continue on anyway
-                  i_main_courseIndex++;
-                  break;
-                }
-              case 10:
                 {
                   //grab cube
                   if (b_cube_rearPossession)
@@ -474,7 +462,7 @@ void loop() {
                   i_main_courseIndex++;
                   break;
                 }
-              case 11:
+              case 9:
                 {
                   //hand motors close, begin arm motor
                   if (millis() - ul_servo_timer > ui_servo_waitTime)
@@ -486,7 +474,7 @@ void loop() {
                   }
                   break;
                 }
-              case 12:
+              case 10:
                 {
                   //servos in position,
                   if (millis() - ul_servo_timer > ui_servo_waitTime)
@@ -499,12 +487,50 @@ void loop() {
                   }
                   break;
                 }
+              case 11:
+                {
+                  //found a cube, get slave to stop moving
+                  if (i_slave_courseIndex != 0)
+                  {
+                    Serial.println("ping41");
+                    tellSlave.write(6);
+                    //i_slave_commsindex = 6;
+                    Serial.println("ping42");
+                  }
+                  else
+                  {
+                    //slave acknowledges and is stopped
+                    i_main_courseIndex++;
+                    Serial.println("ping43");
+                  }
+                  break;
+                }
+              case 12:
+                {
+                  //check that we still have cube
+                  if (b_cube_rearPossession && (!b_sensor_rearSwitch))
+                  {
+                    //there is a problem
+                    Serial.print("ERROR: CUBE SHOULD BE IN SWITCH BUT IS GONE");
+                    CharliePlexM::Write(ci_charlieplex_errorLight, 1);
+                  }
+                  if ((!b_cube_rearPossession) && (!b_sensor_frontSwitch))
+                  {
+                    //there is a problem
+                    Serial.print("ERROR: CUBE SHOULD BE IN FRONT SWITCH BUT IS MISSING");
+                    CharliePlexM::Write(ci_charlieplex_errorLight, 1);
+                  }
+                  //continue on anyway
+                  i_main_courseIndex++;
+                  break;
+                }
               case 13:
                 {
                   //tell slave to find pyramid
                   if (i_slave_courseIndex != 3)
                   {
                     tellSlave.write(9);
+                    //i_slave_commsindex = 9;
                   }
                   else
                   {
@@ -517,6 +543,7 @@ void loop() {
                     //pyramid is found! stop!
                     b_servo_tipPlateOn = false;
                     tellSlave.write(6);
+                    //i_slave_commsindex = 6;
                     i_main_courseIndex++;
                   }
                   break;
@@ -527,6 +554,7 @@ void loop() {
                   if (i_slave_courseIndex != 0)
                   {
                     tellSlave.write(6);
+                    //i_slave_commsindex = 6;
                   }
                   else
                     i_main_courseIndex++;
@@ -588,7 +616,8 @@ void loop() {
           {
             Serial.println("ping46");
             //if slave didn't give confirmation, tell it to
-            tellSlave.write(4); //tell slave to go to calibration
+            tellSlave.write(4);
+            //i_slave_commsindex = 4; //tell slave to go to calibration
             Serial.println("ping47");
           }
           if (b_slave_isFinished)
@@ -613,13 +642,14 @@ void loop() {
             Serial.println("ping51");
             //tell slave to go in testing mode until aknowledged
             tellSlave.write(5);
+            //i_slave_commsindex = 5;
             Serial.println("ping52");
           }
           else
           {
             Serial.println("ping53");
             //current testing function
-            //placeCube();
+            placeCube();
 
             //currently just closes servo hands
             //b_servo_frontHandOn = true;
@@ -656,6 +686,30 @@ void loop() {
   //charlieplexing status updates here
   CharliePlexM::Write(ci_charlieplex_foundCube, (b_sensor_rearSwitch || b_sensor_frontSwitch));
   CharliePlexM::Write(ci_charlieplex_foundPyramid, b_sensor_tipSwitch);
+  if (i_main_modeIndex == 0)
+  {
+    CharliePlexM::Write(9, 1);
+  }
+  else
+  {
+    CharliePlexM::Write(9, 0);
+  }
+  if (i_main_modeIndex == 1)
+  {
+    CharliePlexM::Write(6, 1);
+  }
+  else
+  {
+    CharliePlexM::Write(6, 0);
+  }
+  if (i_main_modeIndex == 3)
+  {
+    CharliePlexM::Write(3, 1);
+  }
+  else
+  {
+    CharliePlexM::Write(3, 0);
+  }
 
   if ((i_main_courseIndex == 2) || (i_main_courseIndex == 3) || (i_main_courseIndex == 6) || (i_main_courseIndex == 7))
   {
@@ -667,7 +721,7 @@ void loop() {
 
 
   //debug stuff here
-Serial.println("ping58");
+  Serial.println("ping58");
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
@@ -738,26 +792,37 @@ void readSlave()
   //check for any new messages from the slave comm port
   //also have an interpretation of that message run in here
   //we're getting 1 byte of data, so something to take the number and change whatever variables the meaning affects
-
+  b_slave_newCommand = false;
   b_slave_isFinished = false; //default sets to false, if true, will change for one loop then go back to false
-Serial.println("ping60");
+  Serial.println("ping60");
+
   if (tellSlave.available())
   {
-    Serial.println("ping61");
+    Serial.println("ping61-----------------------------------------------------------------------------");
+    bt_slave_lastMessage = bt_slave_message;
+    if (bt_slave_lastMessage != bt_slave_message)
+    {
+      b_slave_newCommand = true;
+    }
+
     bt_slave_message = tellSlave.read();
     //code to interpret message here
     //255 is error message?
     Serial.println("ping62");
     switch (bt_slave_message)
     {
-      Serial.println("ping63");
+        Serial.println("ping63");
       case 0:
         //default empty
         break;
       case 1:
         {
           //slave tells that it has finished its task
-          b_slave_isFinished = true;
+          if (b_slave_newCommand)
+          {
+            b_slave_isFinished = true;
+          }
+
           bt_slave_message = 0; //clears receiving the message
           break;
         }
@@ -807,6 +872,9 @@ Serial.println("ping60");
     }
     Serial.println("ping65");
   }
+  Serial.println("------------------------------------------------------------");
+  Serial.println("------------------------------------------------------------");
+  //  tellSlave.write(i_slave_commsindex);
 }
 
 
@@ -1072,6 +1140,14 @@ void placeCube()
     case 4:
       {
         //drop cube
+        if(b_cube_rearPossession)
+        {
+          b_servo_rearHandOn=true;
+        }
+        else
+        {
+          b_servo_frontHandOn=true;
+        }
         i_servo_rearHandPos = ci_servo_rearHandOpen; //write both open, only one will be on from holding the cube
         i_servo_frontHandPos = ci_servo_frontHandOpen;
         ul_pyramid_timer = millis();
