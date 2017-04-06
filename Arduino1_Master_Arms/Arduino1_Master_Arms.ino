@@ -205,6 +205,7 @@ void setup() {
 }
 
 void loop() {
+  Serial.println("ping1");
   // Button presses (affects i_main_modeIndex)
   // 0 = idle
   // 1 = run main program
@@ -214,14 +215,17 @@ void loop() {
   //button press counter
   if ((millis() - ul_startButton_3secTime) > 3000)
   {
+    Serial.println("ping2");
     b_startButton_3secTimeUp = true;
   }
-
+  Serial.println("ping3");
   // button-based mode selection
   if (CharliePlexM::ui_Btn)
   {
+    Serial.println("ping4");
     if (b_startButton_doOnce == false)
     {
+      Serial.println("ping5");
       b_startButton_doOnce = true;
       i_main_modeIndex++;
       i_main_modeIndex = i_main_modeIndex & 7;
@@ -229,51 +233,68 @@ void loop() {
       b_startButton_3secTimeUp = false;
       b_main_calibrationStart = false;
     }
+    Serial.println("ping6");
   }
   else
   {
+    Serial.println("ping7");
     b_startButton_doOnce = LOW;
   }
 
-
+  Serial.println("ping8");
   //communication with other board all the time, and read all sensors
   readSlave();
+  Serial.println("ping9");
   readLimitSwitches();
+  Serial.println("ping10");
 
 
   //main switch statement to drive mode that is operating in
   //will not be active until after 3 second time out from last button press (other than case 0)
   switch (i_main_modeIndex)
   {
+      Serial.println("ping11");
     case 0:
       {
+        Serial.println("ping12");
         //sits idle, default on start up
         if (i_slave_modeIndex != 0)
         {
+          Serial.println("ping13");
           //untill acknowledgement, tell slave that it is in idle mode
           tellSlave.write(2);
+          Serial.println("ping14");
         }
+        Serial.println("ping15");
         turnOffAllServos();
+        Serial.println("ping16");
         break;
       }
     case 1:
       {
+        Serial.println("ping17");
 
         if (b_startButton_3secTimeUp)
         {
           if (i_slave_modeIndex != 1)
           {
+            Serial.println("ping18");
             tellSlave.write(3); //tell slave its in main course
+
+            Serial.println("ping19");
           }
           else
           {
+            Serial.println("ping20");
             //don't do stuff if write is occuring (softwareserial library has issues)
 
             //course navigation
             switch (i_main_courseIndex)
             {
+                Serial.println("ping21");
               case 0:
                 {
+                  Serial.println("ping22");
                   //lower arm and open rear hand on wall
                   b_servo_rearArmOn = true;
                   b_servo_rearHandOn = true;
@@ -284,9 +305,11 @@ void loop() {
                   ul_servo_timer = millis();
                   i_main_courseIndex++;
                   break;
+                  Serial.println("ping23");
                 }
               case 1:
                 {
+                  Serial.println("ping24");
                   //wait for servos to be in position, then disconnect
                   if (millis() - ul_servo_timer > ui_servo_waitTime)
                   {
@@ -294,22 +317,28 @@ void loop() {
                     b_servo_rearHandOn = false;
                     b_servo_frontArmOn = false;
                     i_main_courseIndex++;
+                    Serial.println("ping25");
                   }
                   break;
                 }
               case 2:
                 {
                   //communicate with slave, tell it to begin following wall
+                  Serial.println("ping26");
                   if (i_slave_courseIndex != 1)
                   {
                     tellSlave.write(7);
+                    Serial.println("ping27");
                   }
+                  
                   else
                     i_main_courseIndex++;
+                  Serial.println("ping28");
                   //no break intentional
                 }
               case 3:
                 {
+                  Serial.println("ping29");
                   //checks for cube
                   if (b_sensor_rearSwitch)
                   {
@@ -322,10 +351,12 @@ void loop() {
                     //slave ran out of wall to follow, switch to reverse
                     i_main_courseIndex = 4;
                   }
+                  Serial.println("ping30");
                   break;
                 }
               case 4:
                 {
+                  Serial.println("ping31");
                   //case 4-8 is similar to 0-3, just in reverse direction
                   b_servo_frontArmOn = true;
                   b_servo_frontHandOn = true;
@@ -335,10 +366,12 @@ void loop() {
                   i_servo_rearArmPos = ci_servo_rearArmUp;
                   ul_servo_timer = millis();
                   i_main_courseIndex++;
+                  Serial.println("ping32");
                   break;
                 }
               case 5:
                 {
+                  Serial.println("ping33");
                   //wait for servos to be in position, then disconnect
                   if (millis() - ul_servo_timer > ui_servo_waitTime)
                   {
@@ -347,30 +380,38 @@ void loop() {
                     b_servo_rearArmOn = false;
                     i_main_courseIndex++;
                   }
+                  Serial.println("ping34");
                   break;
                 }
               case 6:
                 {
+                  Serial.println("ping35");
                   //communicate with slave, tell it to begin following wall backwards
                   if (i_slave_courseIndex != 2)
                   {
                     tellSlave.write(8);
+                    Serial.println("ping36");
                   }
+
                   else
                     i_main_courseIndex++;
+                  Serial.println("ping37");
                   //no break intentional
                 }
               case 7:
                 {
                   //checks for cube
+                  Serial.println("ping38");
                   if (b_sensor_frontSwitch)
                   {
                     //found cube
                     i_main_courseIndex = 8;
                     b_cube_rearPossession = false;
+                    Serial.println("ping39");
                   }
                   else if (b_slave_isFinished)
                   {
+                    Serial.println("ping40");
                     //slave ran out of wall to follow, switch back to forwards
                     i_main_courseIndex = 0;
                   }
@@ -381,12 +422,15 @@ void loop() {
                   //found a cube, get slave to stop moving
                   if (i_slave_courseIndex != 0)
                   {
+                    Serial.println("ping41");
                     tellSlave.write(6);
+                    Serial.println("ping42");
                   }
                   else
                   {
                     //slave acknowledges and is stopped
                     i_main_courseIndex++;
+                    Serial.println("ping43");
                   }
                   break;
                 }
@@ -534,17 +578,22 @@ void loop() {
       }
     case 2:
       {
+        Serial.println("ping44");
         if (b_startButton_3secTimeUp)
         {
           //calibrate motors
+          Serial.println("ping45");
           CharliePlexM::Write(ci_charlieplex_calibration, 1); //turn on calibration indicator
           if (i_slave_modeIndex != 2)
           {
+            Serial.println("ping46");
             //if slave didn't give confirmation, tell it to
             tellSlave.write(4); //tell slave to go to calibration
+            Serial.println("ping47");
           }
           if (b_slave_isFinished)
           {
+            Serial.println("ping48");
             //calibration complete, back to main
             CharliePlexM::Write(ci_charlieplex_calibration, 0);
             i_main_modeIndex = 0;
@@ -554,16 +603,21 @@ void loop() {
       }
     case 3:
       {
+        Serial.println("ping49");
         if (b_startButton_3secTimeUp)
         {
+          Serial.println("ping50");
           //throw in whatever code you want to test but not mess with case 1 here
           if (i_slave_modeIndex != 3)
           {
+            Serial.println("ping51");
             //tell slave to go in testing mode until aknowledged
             tellSlave.write(5);
+            Serial.println("ping52");
           }
           else
           {
+            Serial.println("ping53");
             //current testing function
             //placeCube();
 
@@ -589,15 +643,16 @@ void loop() {
     default:
       {
         //you pushed the button too many times
+        Serial.println("ping54");
         Serial.print("too many button pushes");
         i_main_modeIndex = 0;
         break;
       }
   }
 
-
+  Serial.println("ping55");
   moveServos(); //tells the servos that are turned on to move to desired position, also auto turns them off (according to a bool for on off and int for position)
-
+  Serial.println("ping56");
   //charlieplexing status updates here
   CharliePlexM::Write(ci_charlieplex_foundCube, (b_sensor_rearSwitch || b_sensor_frontSwitch));
   CharliePlexM::Write(ci_charlieplex_foundPyramid, b_sensor_tipSwitch);
@@ -608,11 +663,11 @@ void loop() {
   }
   else
     CharliePlexM::Write(ci_charlieplex_followWallParallel, 0);
-
+  Serial.println("ping57");
 
 
   //debug stuff here
-
+Serial.println("ping58");
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
@@ -679,19 +734,23 @@ void loop() {
 
 void readSlave()
 {
+  Serial.println("ping59");
   //check for any new messages from the slave comm port
   //also have an interpretation of that message run in here
   //we're getting 1 byte of data, so something to take the number and change whatever variables the meaning affects
 
   b_slave_isFinished = false; //default sets to false, if true, will change for one loop then go back to false
-
+Serial.println("ping60");
   if (tellSlave.available())
   {
+    Serial.println("ping61");
     bt_slave_message = tellSlave.read();
     //code to interpret message here
     //255 is error message?
+    Serial.println("ping62");
     switch (bt_slave_message)
     {
+      Serial.println("ping63");
       case 0:
         //default empty
         break;
@@ -746,12 +805,14 @@ void readSlave()
           break;
         }
     }
+    Serial.println("ping65");
   }
 }
 
 
 void turnOffAllServos()
 {
+  Serial.println("ping66");
   //does as it says
   //note, due to power draw issues if all 6 (8 if including other arduino) are on at once, keep as many off at once as possible
 
@@ -785,6 +846,7 @@ void turnOffAllServos()
     servo_tipPlate.detach();
     b_servo_tipPlateOn = false;
   }
+  Serial.println("ping67");
 }
 
 
@@ -793,6 +855,7 @@ void turnOffAllServos()
 
 void readLimitSwitches()
 {
+  Serial.println("ping68");
   //take sensor readings for all limit switches, includes debouncing
   //update to previous states
   b_switch_rearPrev = b_switch_rearCurrent;
@@ -849,12 +912,14 @@ void readLimitSwitches()
       b_sensor_tipSwitch = b_switch_tipCurrent;
     }
   }
+  Serial.println("ping69");
 
 }
 
 
 void moveServos()
 {
+  Serial.println("ping70");
   //writes position to servos, when active
   if (b_servo_rearArmOn)
   {
@@ -946,20 +1011,24 @@ void moveServos()
   {
     servo_tipPlate.detach();
   }
+  Serial.println("ping71");
 }
 
 void readyPyramid()
 {
+  Serial.println("ping72");
   //turns on servo motor for pyramid tipper and holds it at vertical
   //do this before pyramid gets driven over
   //reason is to prevent driving too far, and have solid surface for limit switch to trigger (not certain if needed, but it shouldnt hurt)
   //also raises plate
   //I reccomend using dropPyramid and raisePlate
+  Serial.println("ping73");
 
 }
 
 void placeCube()
 {
+  Serial.println("ping74");
   //final function call in course navigation
   //assuming pyramid in place, it drops plate, tips pyramid, releases cube and releases pyramid
   switch (i_pyramid_index)
@@ -1072,6 +1141,7 @@ void placeCube()
       }
 
   }
+  Serial.println("ping75");
 }
 
 

@@ -43,8 +43,9 @@ I2CEncoder encoder_leftMotor;
 I2CEncoder encoder_rightMotor;
 const int ci_I2C_SDA = A4;         // I2C data = white    //these lines may need to be included to make encoders work, idk...
 const int ci_I2C_SCL = A5;         // I2C clock = yellow
-SoftwareSerial pin_IR(14, 40); //A0 is D14, 40 is non-existant (we only need to read, not write)
 const int ci_pin_IRswitch = A1;
+int trig_array[5] = {9, 3, 5, 13, 11};
+int echo_array[5] = {8, 2, 4, 12, 10};
 
 
 //Data from sensors
@@ -101,16 +102,8 @@ bool b_master_newCommand; //true when issuing command from master has changed, f
 
 //ultrasonic data processing variables
 double d_us_tolerence; //used to accept when a fixed reading is reasonable, used as a "percentage" (is multiplied to get upper range, divided for lower)
-long l_us_rawFront[3]; //process 5 reading of ultrasonic at once and average them for use
-long l_us_rawRear[3];
-long l_us_rawRight[3];
-long l_us_rawLeftFront[3];
-long l_us_rawLeftRear[3];
-long l_us_prevFront[3]; //previously measured reading for the each ultrasonic
-long l_us_prevRear[3];
-long l_us_prevRight[3];
-long l_us_prevLeftFront[3];
-long l_us_prevLeftRear[3];
+long l_us_prev[5][3];//previous data
+long l_us_raw[5][3];//raw data
 bool b_us_frontIsTrue; //is true when current reading is within tolerance
 bool b_us_rearIsTrue;
 bool b_us_rightIsTrue;
@@ -138,13 +131,14 @@ const int ci_wall_rearTargetDis = 290; //use to keep wall following parallel
 const int ci_wall_frontTargetDis = 360;
 const int ci_wall_tolerenceDis = 40; //anything beyond this scope will
 
+int i2;
+
 
 void setup() {
   // put your setup code here, to run once:
   Wire.begin();
-  Serial.begin(9600); //for debugging
+  Serial.begin(2400); //for debugging and IR output, don't worry about shorting since IR is read only
   tellMaster.begin(9600);
-  pin_IR.begin(2400);
 
   //set pinmodes
   pinMode(ci_pin_usTrigLeftFront, OUTPUT);
@@ -208,6 +202,7 @@ void loop() {
   pingAll();
   readIR();
   readEncoders();
+  Serial.println("ping1");
 
 
   switch (i_main_modeIndex)
@@ -215,6 +210,7 @@ void loop() {
     case 0:
       {
         //sitting idle
+        Serial.println("ping2");
         encoder_leftMotor.zero();
         encoder_rightMotor.zero();
         detachMotors();
@@ -222,11 +218,13 @@ void loop() {
       }
     case 1:
       {
+
         //main course navigation
         switch (i_main_courseIndex)
         {
           case 0:
             {
+              Serial.println("ping3");
               //wait for instructions
               encoder_leftMotor.zero();
               encoder_rightMotor.zero();
@@ -477,16 +475,14 @@ void readMaster()
   //we're getting 1 byte of data, so something to take the number and change whatever variables the meaning affects
 
   b_master_newCommand = false; //set to false by default, will change to true if new command comes
+  Serial.println("ping5");
 
-  if (!tellMaster.isListening())
-  {
-    //only one software serial available at a time, make sure it is listening
-    tellMaster.listen();
-  }
+
   if (tellMaster.available())
   {
     bt_master_lastMessage = bt_master_message;
     bt_master_message = tellMaster.read();
+    Serial.println("ping6");
 
     //check and toggle if message has changed
     if (bt_master_lastMessage != bt_master_message)
@@ -495,7 +491,9 @@ void readMaster()
       //sends confirmation once
       b_master_newCommand = true;
       tellMaster.write(bt_master_message); //sends a confirmation to master that it got message
+      Serial.println("ping7");
     }
+    Serial.println("ping8");
 
     //code to interpret message here
     //255 is error message?
@@ -536,11 +534,13 @@ void readMaster()
           break;
         }
     }
+    Serial.println("ping9");
   }
 }
 
 void pingAll()
 {
+  Serial.println("ping10");
   //reads all ultrasonic values
   pingAllSubFunction();
 
@@ -556,12 +556,13 @@ void pingAll()
       l_sensor_usLeftRear = 0;
       l_sensor_usRight = 0;
     }
-    l_sensor_usFront += l_us_rawFront[i];
-    l_sensor_usRear += l_us_rawRear[i];
-    l_sensor_usLeftFront += l_us_rawLeftFront[i];
-    l_sensor_usLeftRear += l_us_rawLeftRear[i];
-    l_sensor_usRight += l_us_rawRight[i];
+    l_sensor_usFront += l_us_raw[4][i];
+    l_sensor_usRear += l_us_raw[3][i];
+    l_sensor_usLeftFront += l_us_raw[0][i];
+    l_sensor_usLeftRear += l_us_raw[1][i];
+    l_sensor_usRight += l_us_raw[2][i];
   }
+  Serial.println("ping11");
   //make average
   l_sensor_usFront /= 3;
   l_sensor_usRear /= 3;
@@ -576,57 +577,56 @@ void pingAll()
   b_us_leftFrontIsTrue = true;
   b_us_leftRearIsTrue = true;
   b_us_rightIsTrue = true;
-
+  Serial.println("ping12");
   for (int i = 0; i < 3; i++)
   {
-    if ((l_sensor_usFront * d_us_tolerence < l_us_rawFront[i]) || (l_sensor_usFront / d_us_tolerence > l_us_rawFront[i]))
+    if ((l_sensor_usFront * d_us_tolerence < l_us_raw[4][i]) || (l_sensor_usFront / d_us_tolerence > l_us_raw[4][i]))
     {
       //a value in front ultrasonic reading is out of bounds, random readings may exist with skewed data
       b_us_frontIsTrue = false;
     }
-    if ((l_sensor_usRear * d_us_tolerence < l_us_rawRear[i]) || (l_sensor_usRear / d_us_tolerence > l_us_rawRear[i]))
+    if ((l_sensor_usRear * d_us_tolerence < l_us_raw[3][i]) || (l_sensor_usRear / d_us_tolerence > l_us_raw[3][i]))
     {
       //a value in rear ultrasonic reading is out of bounds, random readings may exist with skewed data
       b_us_rearIsTrue = false;
     }
-    if ((l_sensor_usLeftFront * d_us_tolerence < l_us_rawLeftFront[i]) || (l_sensor_usLeftFront / d_us_tolerence > l_us_rawLeftFront[i]))
+    if ((l_sensor_usLeftFront * d_us_tolerence < l_us_raw[0][i]) || (l_sensor_usLeftFront / d_us_tolerence > l_us_raw[0][i]))
     {
       //a value in left front ultrasonic reading is out of bounds, random readings may exist with skewed data
       b_us_leftFrontIsTrue = false;
     }
-    if ((l_sensor_usLeftRear * d_us_tolerence < l_us_rawLeftRear[i]) || (l_sensor_usLeftRear / d_us_tolerence > l_us_rawLeftRear[i]))
+    if ((l_sensor_usLeftRear * d_us_tolerence < l_us_raw[1][i]) || (l_sensor_usLeftRear / d_us_tolerence > l_us_raw[1][i]))
     {
       //a value in left rear ultrasonic reading is out of bounds, random readings may exist with skewed data
       b_us_leftRearIsTrue = false;
     }
-    if ((l_sensor_usRight * d_us_tolerence < l_us_rawRight[i]) || (l_sensor_usRight / d_us_tolerence > l_us_rawRight[i]))
+    if ((l_sensor_usRight * d_us_tolerence < l_us_raw[2][i]) || (l_sensor_usRight / d_us_tolerence > l_us_raw[2][i]))
     {
       //a value in right ultrasonic reading is out of bounds, random readings may exist with skewed data
       b_us_rightIsTrue = false;
     }
   }
+  Serial.println("ping13");
 
 }
 
 void readIR()
 {
+  Serial.println("ping14");
   readIRSwitch();
   //takes IR reading
-  if (!pin_IR.isListening())
-  {
-    //only one software serial can run at a time, must listen to one we want
-    pin_IR.listen();
-  }
-  if (pin_IR.available())
-  {
-    bt_sensor_IR = pin_IR.read();
-  }
 
-  tellMaster.listen(); //only need IR reading when we read it, communication from master can come at any point and we should leave the port free as much as possible
+  if (Serial.available())
+  {
+    bt_sensor_IR = Serial.read();
+  }
+  Serial.println("ping15");
+
 }
 
 void readIRSwitch()
 {
+  Serial.println("ping16");
   //reads the value off IR switch, with debouncing
   //when the value changes, sends one message to master to indicate that
   //the single use of write shouldn't affect performance, as this switch is assumed to not be changed during course navigation anyway
@@ -654,45 +654,30 @@ void readIRSwitch()
       //actually, this is only to change a light in charliplex. not needed, scarp the communication on this value
     }
   }
+  Serial.println("ping17");
 }
 
 void pingAllSubFunction()
 {
+  Serial.println("ping18");
   //used to actually ping and measure the ultrasonic readings, do not use on its own
-
   //for loop to measure 5 readings at a time, process average later
-  for (int i = 0; i < 5; i++)
-  {
-    l_us_prevFront[i] = l_us_rawFront[i]; //sets previous reading
-    digitalWrite(ci_pin_usTrigFront, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(ci_pin_usTrigFront, LOW);
-    l_us_rawFront[i] = pulseIn(ci_pin_usEchoFront, HIGH);
-
-    l_us_prevLeftFront[i] = l_us_rawLeftFront[i];
-    digitalWrite(ci_pin_usTrigLeftFront , HIGH);
-    delayMicroseconds(10);
-    digitalWrite(ci_pin_usTrigLeftFront, LOW);
-    l_us_rawLeftFront[i] = pulseIn(ci_pin_usEchoLeftFront, HIGH);
-
-    l_us_prevLeftRear[i] = l_us_rawLeftRear[i];
-    digitalWrite(ci_pin_usTrigLeftRear, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(ci_pin_usTrigLeftRear, LOW);
-    l_us_rawLeftRear[i] = pulseIn(ci_pin_usEchoLeftRear, HIGH);
-
-    l_us_prevRight[i] = l_us_rawRight[i];
-    digitalWrite(ci_pin_usTrigRight, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(ci_pin_usTrigRight, LOW);
-    l_us_rawRight[i] = pulseIn(ci_pin_usEchoRight, HIGH);
-
-    l_us_prevRear[i] = l_us_rawRear[i];
-    digitalWrite(ci_pin_usTrigRear, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(ci_pin_usTrigRear, LOW);
-    l_us_rawRear[i] = pulseIn(ci_pin_usEchoRear, HIGH);
+  //int trig_array[5] = {9, 3, 5, 13, 11};
+  //int echo_array[5] = {8, 2, 4, 12, 10};
+  //long l_us_prev[5][3];
+  //long l_us_raw[5][3];
+  if (i2 > 2) {
+    i2 = 0;
   }
+  for (int index = 0; index < 5; index++) {
+    l_us_prev[index][i2] = l_us_raw[index][i2];
+    digitalWrite(trig_array[index] , HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trig_array[index], LOW);
+    l_us_raw[index][i2] = pulseIn(echo_array[index], HIGH);
+  }
+  i2++;
+  Serial.println("ping19");
 
   //convert old data to previous data variables
   l_us_pSensorFront = l_sensor_usFront;
@@ -710,13 +695,16 @@ void pingAllSubFunction()
 
 void readEncoders()
 {
+  Serial.println("ping20");
   //read both encoder values
   encoder_leftMotor.getRawPosition();
   encoder_rightMotor.getRawPosition();
+  Serial.println("ping21");
 }
 
 void detachMotors()
 {
+  Serial.println("ping22");
   //detaches the two motors, use when idle for instructions
   //important to detach motors to minimize power use
   if (b_motor_attached)
@@ -725,10 +713,12 @@ void detachMotors()
     servo_leftMotor.detach();
     b_motor_attached = false;
   }
+  Serial.println("ping23");
 }
 
 void attachMotors()
 {
+  Serial.println("ping24");
   //reattaches motors, use this before motor use
   if (!b_motor_attached)
   {
@@ -736,20 +726,24 @@ void attachMotors()
     servo_leftMotor.attach(ci_pin_leftMotor);
     b_motor_attached = true;
   }
+  Serial.println("ping25");
 }
 
 void driveMotors()
 {
+  Serial.println("ping26");
   //actually sets motor speeds to be custom
   if (b_motor_attached && b_motor_changeEnabled)
   {
     servo_leftMotor.writeMicroseconds(ui_motor_leftSpeed + ui_motor_leftOffset);
     servo_rightMotor.writeMicroseconds(ui_motor_rightSpeed + ui_motor_rightOffset);
   }
+  Serial.println("ping27");
 }
 
 void driveForwards()
 {
+  Serial.println("ping28");
   //drive in a straight line forwards
   if (b_motor_attached && b_motor_changeEnabled)
   {
@@ -757,22 +751,27 @@ void driveForwards()
     servo_leftMotor.writeMicroseconds(constrain(cui_motor_forwardSpeed + ui_motor_leftOffset, 1600, 2100));
     servo_rightMotor.writeMicroseconds(constrain(cui_motor_forwardSpeed + ui_motor_rightOffset, 1600, 2100));
   }
+  Serial.println("ping29");
 }
 
 void driveBackwards()
 {
+  Serial.println("ping30");
   //drive in a straight line backwards
   if (b_motor_attached && b_motor_changeEnabled)
   {
     servo_leftMotor.writeMicroseconds(constrain(cui_motor_reverseSpeed + ui_motor_leftOffsetBack, 300, 1400));
     servo_rightMotor.writeMicroseconds(constrain(cui_motor_reverseSpeed + ui_motor_rightOffsetBack, 300, 1400));
   }
+  Serial.println("ping31");
 }
 
 void followWall()
 {
+  Serial.println("ping32");
   //uses 2 ultrasonics to drive parallel to wall, forwards
   attachMotors();
+  Serial.println("ping33");
   b_motor_changeEnabled = true;
   ui_motor_leftSpeed = cui_motor_forwardSpeed + ui_motor_leftOffset;
   ui_motor_rightSpeed = cui_motor_forwardSpeed + ui_motor_rightOffset;
@@ -790,6 +789,7 @@ void followWall()
       ui_motor_rightSpeed -= 100;
     }
   }
+  Serial.println("ping34");
   if (b_us_leftRearIsTrue)
   {
     if (l_sensor_usLeftRear > ci_wall_rearTargetDis + ci_wall_tolerenceDis)
@@ -803,6 +803,7 @@ void followWall()
       ui_motor_leftSpeed -= 100;
     }
   }
+  Serial.println("ping35");
 
   //ensure this makes them go forwards
   ui_motor_leftSpeed = constrain(ui_motor_leftSpeed, 1500, 2100);
@@ -811,12 +812,12 @@ void followWall()
 
   //write speeds to motors
   driveMotors();
-
+  Serial.println("ping35");
   //safety check that end was not hit
   if (b_us_frontIsTrue)
   {
     //its a reliable reading
-    if (l_sensor_usFront < 230)
+    if (l_sensor_usFront < 240)
     {
       //right in front of wall, stop motors, return to index 0, tell master, wait for further instruction
       stopMotors();
@@ -824,6 +825,7 @@ void followWall()
       tellMaster.write(1);
     }
   }
+  Serial.println("ping36");
 
 }
 
@@ -852,6 +854,7 @@ void rotateCounterclockwise()
 
 void stopMotors()
 {
+  Serial.println("ping37");
   //stop motor movement
   //may not need to be a function, can be a bool locking movement, similar to linefollower
   if (b_motor_attached)
@@ -859,6 +862,7 @@ void stopMotors()
     servo_leftMotor.writeMicroseconds(cui_motor_stop);
     servo_rightMotor.writeMicroseconds(cui_motor_stop);
   }
+  Serial.println("ping38");
 
 }
 
