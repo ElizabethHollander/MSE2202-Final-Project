@@ -18,10 +18,11 @@
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
 #define debug_ultrasonic
-//#define debug_motors
+#define debug_motors
 //#define debug_encoders
 //#define debug_IR
 #define debug_communciations
+#define time_ping;
 const unsigned int cui_debug_displayInterval = 1000; //time between display on debug output, in ms
 
 
@@ -138,6 +139,9 @@ const int ci_wall_rearTargetDis = 290; //use to keep wall following parallel
 const int ci_wall_frontTargetDis = 360;
 const int ci_wall_tolerenceDis = 40; //anything beyond this scope will
 
+#ifdef time_ping
+unsigned long ping_time;
+#endif
 
 void setup() {
   // put your setup code here, to run once:
@@ -163,6 +167,7 @@ void setup() {
 
 
   //more initialization
+  delay(500);
   servo_leftMotor.attach(ci_pin_leftMotor);
   servo_rightMotor.attach(ci_pin_rightMotor);
   encoder_leftMotor.init(1.0 / 3.0 * MOTOR_393_SPEED_ROTATIONS, MOTOR_393_TIME_DELTA);
@@ -205,7 +210,14 @@ void loop() {
   // code runs similar to master, instead of button input, gets instructions from serial port
   //reads data from all sensors
   readMaster();
+#ifdef time_ping
+  ping_time = millis();
+#endif
+
   pingAll();
+#ifdef time_ping
+  ping_time = ping_time - millis();
+#endif
   readIR();
   readEncoders();
 
@@ -363,6 +375,8 @@ void loop() {
       {
         //this really shouldn't be possible, something is broken
         Serial.println("ERROR unknown mode index");
+        //setting it back to the default if it hits an error in the button presses, otherwise we need to hard reset
+        i_main_modeIndex = 0;
         break;
       }
   }
@@ -372,6 +386,11 @@ void loop() {
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
+#ifdef time_ping
+    Serial.print("ping time was: ");
+    Serial.println(ping_time);
+#endif
+
     //ultrasonic debug
 #ifdef debug_ultrasonic
     Serial.println("Debug ultrasonic values (first number 1=reliable, 0=random):");
@@ -773,30 +792,34 @@ void followWall()
   ui_motor_leftSpeed = cui_motor_forwardSpeed + ui_motor_leftOffset;
   ui_motor_rightSpeed = cui_motor_forwardSpeed + ui_motor_rightOffset;
 
-  if (b_us_leftFrontIsTrue)
+  if (b_us_leftFrontIsTrue && ((l_sensor_usLeftFront > ci_wall_frontTargetDis + ci_wall_tolerenceDis) || (l_sensor_usLeftFront < ci_wall_frontTargetDis - ci_wall_tolerenceDis)))
   { //check value is not nonsense
     if (l_sensor_usLeftFront > ci_wall_frontTargetDis + ci_wall_tolerenceDis)
     {
+      Serial.println("ping1");
       //front corner too far away, slow down right wheel
-      ui_motor_leftSpeed -= 100;
+      ui_motor_rightSpeed -= 100;
     }
     if (l_sensor_usLeftFront < ci_wall_frontTargetDis - ci_wall_tolerenceDis)
     {
+      Serial.println("ping2");
       //front is too close to wall, slow down left wheel
-      ui_motor_rightSpeed -= 100;
+      ui_motor_leftSpeed -= 100;
     }
   }
-  if (b_us_leftRearIsTrue)
+  else if (b_us_leftRearIsTrue && ((l_sensor_usLeftRear > ci_wall_rearTargetDis + ci_wall_tolerenceDis) || (l_sensor_usLeftRear < ci_wall_rearTargetDis - ci_wall_tolerenceDis)))
   {
     if (l_sensor_usLeftRear > ci_wall_rearTargetDis + ci_wall_tolerenceDis)
     {
+      Serial.println("ping3");
       //rear corner too far, slow down left
-      ui_motor_rightSpeed -= 100;
+      ui_motor_leftSpeed -= 100;
     }
     if (l_sensor_usLeftRear < ci_wall_rearTargetDis - ci_wall_tolerenceDis)
     {
+      Serial.println("ping4");
       //rear corner too close, slow down right
-      ui_motor_leftSpeed -= 100;
+      ui_motor_rightSpeed -= 100;
     }
   }
 
