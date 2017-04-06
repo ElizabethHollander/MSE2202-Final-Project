@@ -19,8 +19,8 @@
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
 //#define debug_servos
-#define debug_limitSwitches
-//#define debug_communications
+//#define debug_limitSwitches
+#define debug_communications
 const unsigned int cui_debug_displayInterval = 1000; //Time between outputs displayed when debugging is enabled, in ms
 
 
@@ -74,6 +74,7 @@ bool b_startButton_3secTimeUp;
 bool b_startButton_doOnce;
 bool b_main_calibrationStart; //used as a one off variable to start calibration functions, resets to false when idle
 unsigned long ul_debug_secTimer; //used to control debugging outputs to be every 2 seconds, and not constantly
+bool b_cube_rearPossession;
 
 //communications with slave variables
 bool b_slave_isFinished; //toggles to true when slave sends 1, false after something has been done about that
@@ -101,9 +102,9 @@ bool b_servo_tipArmOn;
 bool b_servo_tipPlateOn;
 const int ci_servo_rearArmUp = 90; //constant values used to control servo positions, may need to use different for rear and front
 const int ci_servo_frontArmUp = 100;
-const int ci_servo_rearArmDown;
-const int ci_servo_frontArmDown;
-const int ci_servo_rearArmDrop;
+const int ci_servo_rearArmDown = 8;
+const int ci_servo_frontArmDown = 180;
+const int ci_servo_rearArmDrop = 105;
 const int ci_servo_frontArmDrop = 85;
 const int ci_servo_rearHandOpen = 45;
 const int ci_servo_rearHandClose = 140;
@@ -120,6 +121,7 @@ int i_servo_frontHandPos;
 int i_servo_tipArmPos;
 int i_servo_tipPlatePos;
 unsigned int ui_servo_waitTime; //time in ms to wait after telling a servo to move
+unsigned long ul_servo_timer;
 
 //placing cube under pyramid variables
 int i_pyramid_index;
@@ -268,14 +270,262 @@ void loop() {
             //don't do stuff if write is occuring (softwareserial library has issues)
 
             //course navigation
-            switch(i_main_courseIndex)
+            switch (i_main_courseIndex)
             {
               case 0:
-              //recieve confirmation from slave that it is in case 1
-              if(b_slave_isFinished)
-              {
-                
-              }
+                {
+                  //lower arm and open rear hand on wall
+                  b_servo_rearArmOn = true;
+                  b_servo_rearHandOn = true;
+                  b_servo_frontArmOn = true;
+                  i_servo_rearArmPos = ci_servo_rearArmDown;
+                  i_servo_rearHandPos = ci_servo_rearHandOpen;
+                  i_servo_frontArmPos = ci_servo_frontArmUp;
+                  ul_servo_timer = millis();
+                  i_main_courseIndex++;
+                  break;
+                }
+              case 1:
+                {
+                  //wait for servos to be in position, then disconnect
+                  if (millis() - ul_servo_timer > ui_servo_waitTime)
+                  {
+                    b_servo_rearArmOn = false;
+                    b_servo_rearHandOn = false;
+                    b_servo_frontArmOn = false;
+                    i_main_courseIndex++;
+                  }
+                  break;
+                }
+              case 2:
+                {
+                  //communicate with slave, tell it to begin following wall
+                  if (i_slave_courseIndex != 1)
+                  {
+                    tellSlave.write(7);
+                  }
+                  else
+                    i_main_courseIndex++;
+                  //no break intentional
+                }
+              case 3:
+                {
+                  //checks for cube
+                  if (b_sensor_rearSwitch)
+                  {
+                    //found cube
+                    i_main_courseIndex = 8;
+                    b_cube_rearPossession = true;
+                  }
+                  else if (b_slave_isFinished)
+                  {
+                    //slave ran out of wall to follow, switch to reverse
+                    i_main_courseIndex = 4;
+                  }
+                  break;
+                }
+              case 4:
+                {
+                  //case 4-8 is similar to 0-3, just in reverse direction
+                  b_servo_frontArmOn = true;
+                  b_servo_frontHandOn = true;
+                  b_servo_rearArmOn = true;
+                  i_servo_frontArmPos = ci_servo_frontArmDown;
+                  i_servo_frontHandPos = ci_servo_frontHandOpen;
+                  i_servo_rearArmPos = ci_servo_rearArmUp;
+                  ul_servo_timer = millis();
+                  i_main_courseIndex++;
+                  break;
+                }
+              case 5:
+                {
+                  //wait for servos to be in position, then disconnect
+                  if (millis() - ul_servo_timer > ui_servo_waitTime)
+                  {
+                    b_servo_frontArmOn = false;
+                    b_servo_frontHandOn = false;
+                    b_servo_rearArmOn = false;
+                    i_main_courseIndex++;
+                  }
+                  break;
+                }
+              case 6:
+                {
+                  //communicate with slave, tell it to begin following wall backwards
+                  if (i_slave_courseIndex != 2)
+                  {
+                    tellSlave.write(8);
+                  }
+                  else
+                    i_main_courseIndex++;
+                  //no break intentional
+                }
+              case 7:
+                {
+                  //checks for cube
+                  if (b_sensor_frontSwitch)
+                  {
+                    //found cube
+                    i_main_courseIndex = 8;
+                    b_cube_rearPossession = false;
+                  }
+                  else if (b_slave_isFinished)
+                  {
+                    //slave ran out of wall to follow, switch back to forwards
+                    i_main_courseIndex = 0;
+                  }
+                  break;
+                }
+              case 8:
+                {
+                  //found a cube, get slave to stop moving
+                  if (i_slave_courseIndex != 0)
+                  {
+                    tellSlave.write(6);
+                  }
+                  else
+                  {
+                    //slave acknowledges and is stopped
+                    i_main_courseIndex++;
+                  }
+                  break;
+                }
+              case 9:
+                {
+                  //check that we still have cube
+                  if (b_cube_rearPossession && (!b_sensor_rearSwitch))
+                  {
+                    //there is a problem
+                    Serial.print("ERROR: CUBE SHOULD BE IN SWITCH BUT IS GONE");
+                    CharliePlexM::Write(ci_charlieplex_errorLight, 1);
+                  }
+                  if ((!b_cube_rearPossession) && (!b_sensor_frontSwitch))
+                  {
+                    //there is a problem
+                    Serial.print("ERROR: CUBE SHOULD BE IN FRONT SWITCH BUT IS MISSING");
+                    CharliePlexM::Write(ci_charlieplex_errorLight, 1);
+                  }
+                  //continue on anyway
+                  i_main_courseIndex++;
+                  break;
+                }
+              case 10:
+                {
+                  //grab cube
+                  if (b_cube_rearPossession)
+                  {
+                    b_servo_rearHandOn = true;
+                    b_servo_rearArmOn = true;
+                  }
+                  else
+                  {
+                    b_servo_frontHandOn = true;
+                    b_servo_frontArmOn = true;
+                  }
+                  i_servo_rearHandPos = ci_servo_rearHandClose;
+                  i_servo_rearArmPos = ci_servo_rearArmDown;
+                  i_servo_frontHandPos = ci_servo_frontHandClose;
+                  i_servo_frontArmPos = ci_servo_frontArmDown;
+                  ul_servo_timer = millis();
+                  i_main_courseIndex++;
+                  break;
+                }
+              case 11:
+                {
+                  //hand motors close, begin arm motor
+                  if (millis() - ul_servo_timer > ui_servo_waitTime)
+                  {
+                    i_servo_rearArmPos = ci_servo_rearArmDrop;
+                    i_servo_frontArmPos = ci_servo_frontArmDrop;
+                    ul_servo_timer = millis();
+                    i_main_courseIndex++;
+                  }
+                  break;
+                }
+              case 12:
+                {
+                  //servos in position,
+                  if (millis() - ul_servo_timer > ui_servo_waitTime)
+                  {
+                    b_servo_rearHandOn = false;
+                    b_servo_rearArmOn = false;
+                    b_servo_frontHandOn = false;
+                    b_servo_frontArmOn = false;
+                    i_main_courseIndex++;
+                  }
+                  break;
+                }
+              case 13:
+                {
+                  //tell slave to find pyramid
+                  if (i_slave_courseIndex != 3)
+                  {
+                    tellSlave.write(9);
+                  }
+                  else
+                  {
+                    //fix the tip plate, since it can drop down over time
+                    b_servo_tipPlateOn = true;
+                    i_servo_tipPlatePos = ci_servo_tipPlateUp;
+                  }
+                  if (b_sensor_tipSwitch)
+                  {
+                    //pyramid is found! stop!
+                    b_servo_tipPlateOn = false;
+                    tellSlave.write(6);
+                    i_main_courseIndex++;
+                  }
+                  break;
+                }
+              case 14:
+                {
+                  //wait for response from slave
+                  if (i_slave_courseIndex != 0)
+                  {
+                    tellSlave.write(6);
+                  }
+                  else
+                    i_main_courseIndex++;
+                  break;
+                }
+              case 15:
+                {
+                  //stopped, just place the pyramid
+                  if (b_cube_rearPossession)
+                  {
+                    b_servo_rearHandOn = true;
+                    b_servo_rearArmOn = true;
+                  }
+                  else
+                  {
+                    b_servo_frontHandOn = true;
+                    b_servo_frontArmOn = true;
+                  }
+                  i_servo_rearArmPos = ci_servo_rearArmDrop;
+                  i_servo_frontArmPos = ci_servo_frontArmDrop;
+                  ul_servo_timer = millis();
+                  i_main_courseIndex++;
+                  break;
+                }
+              case 16:
+                {
+                  //done moving arms
+                  if (millis() - ul_servo_timer > ui_servo_waitTime)
+                  {
+                    b_servo_rearArmOn = false;
+                    b_servo_frontArmOn = false;
+                    i_main_courseIndex++;
+                  }
+                  break;
+                }
+              case 17:
+                {
+                  //drop pyramid
+                  placeCube();
+                  break;
+                }
+
+
             }
 
           }
@@ -327,7 +577,10 @@ void loop() {
             //i_servo_tipArmPos = ci_servo_tipArmUp;
 
             //b_servo_rearArmOn = true;
-            //i_servo_rearArmPos = 20;
+            //i_servo_rearArmPos = 100;
+
+            //            b_servo_frontArmOn=true;
+            //            i_servo_frontArmPos=180;
           }
           //i_main_modeIndex = 0;
         }
@@ -344,6 +597,18 @@ void loop() {
 
 
   moveServos(); //tells the servos that are turned on to move to desired position, also auto turns them off (according to a bool for on off and int for position)
+
+  //charlieplexing status updates here
+  CharliePlexM::Write(ci_charlieplex_foundCube, (b_sensor_rearSwitch || b_sensor_frontSwitch));
+  CharliePlexM::Write(ci_charlieplex_foundPyramid, b_sensor_tipSwitch);
+
+  if ((i_main_courseIndex == 2) || (i_main_courseIndex == 3) || (i_main_courseIndex == 6) || (i_main_courseIndex == 7))
+  {
+    CharliePlexM::Write(ci_charlieplex_followWallParallel, 1);
+  }
+  else
+    CharliePlexM::Write(ci_charlieplex_followWallParallel, 0);
+
 
 
   //debug stuff here

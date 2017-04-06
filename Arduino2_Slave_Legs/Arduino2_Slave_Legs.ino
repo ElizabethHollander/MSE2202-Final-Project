@@ -17,10 +17,10 @@
 
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
-#define debug_ultrasonic
+//#define debug_ultrasonic
 //#define debug_motors
 //#define debug_encoders
-//#define debug_IR
+#define debug_IR
 #define debug_communciations
 const unsigned int cui_debug_displayInterval = 1000; //time between display on debug output, in ms
 
@@ -101,16 +101,16 @@ bool b_master_newCommand; //true when issuing command from master has changed, f
 
 //ultrasonic data processing variables
 double d_us_tolerence; //used to accept when a fixed reading is reasonable, used as a "percentage" (is multiplied to get upper range, divided for lower)
-long l_us_rawFront[5]; //process 5 reading of ultrasonic at once and average them for use
-long l_us_rawRear[5];
-long l_us_rawRight[5];
-long l_us_rawLeftFront[5];
-long l_us_rawLeftRear[5];
-long l_us_prevFront[5]; //previously measured reading for the each ultrasonic
-long l_us_prevRear[5];
-long l_us_prevRight[5];
-long l_us_prevLeftFront[5];
-long l_us_prevLeftRear[5];
+long l_us_rawFront[3]; //process 5 reading of ultrasonic at once and average them for use
+long l_us_rawRear[3];
+long l_us_rawRight[3];
+long l_us_rawLeftFront[3];
+long l_us_rawLeftRear[3];
+long l_us_prevFront[3]; //previously measured reading for the each ultrasonic
+long l_us_prevRear[3];
+long l_us_prevRight[3];
+long l_us_prevLeftFront[3];
+long l_us_prevLeftRear[3];
 bool b_us_frontIsTrue; //is true when current reading is within tolerance
 bool b_us_rearIsTrue;
 bool b_us_rightIsTrue;
@@ -236,16 +236,20 @@ void loop() {
           case 1:
             {
               //begin following wall parallel, forwards
+              followWall();
               break;
             }
           case 2:
             {
               //begin following wall, parrallel backwards
+              followWallBackwards();
               break;
             }
           case 3:
             {
-              //made it to end of wall, communicate with master to
+              //search for pyramid
+
+              break;
             }
           default:
             {
