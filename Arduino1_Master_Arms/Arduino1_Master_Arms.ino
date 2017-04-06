@@ -87,7 +87,7 @@ bool b_switch_tipCurrent;
 bool b_switch_rearPrev;
 bool b_switch_frontPrev;
 bool b_switch_tipPrev;
-const int ci_switch_debounceTime=20;
+const int ci_switch_debounceTime = 20;
 unsigned long ul_switch_debounceRear;
 unsigned long ul_switch_debounceFront;
 unsigned long ul_switch_debounceTip;
@@ -268,17 +268,16 @@ void loop() {
             //don't do stuff if write is occuring (softwareserial library has issues)
 
             //course navigation
-            //currently just closes servo hands
-            //b_servo_frontHandOn = true;
-            b_servo_rearHandOn = true;
-            //i_servo_frontHandPos = ci_servo_frontHandClose;
-            i_servo_rearHandPos = ci_servo_rearHandOpen;
+            switch(i_main_courseIndex)
+            {
+              case 0:
+              //recieve confirmation from slave that it is in case 1
+              if(b_slave_isFinished)
+              {
+                
+              }
+            }
 
-            //b_servo_tipArmOn = true;
-            //i_servo_tipArmPos = ci_servo_tipArmUp;
-
-            b_servo_rearArmOn = true;
-            i_servo_rearArmPos = 20;
           }
         }
         break;
@@ -316,7 +315,19 @@ void loop() {
           else
           {
             //current testing function
-            placeCube();
+            //placeCube();
+
+            //currently just closes servo hands
+            //b_servo_frontHandOn = true;
+            //b_servo_rearHandOn = true;
+            //i_servo_frontHandPos = ci_servo_frontHandClose;
+            //i_servo_rearHandPos = ci_servo_rearHandOpen;
+
+            //b_servo_tipArmOn = true;
+            //i_servo_tipArmPos = ci_servo_tipArmUp;
+
+            //b_servo_rearArmOn = true;
+            //i_servo_rearArmPos = 20;
           }
           //i_main_modeIndex = 0;
         }
@@ -340,7 +351,6 @@ void loop() {
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
-    Serial.println(i_pyramid_index);
     CharliePlexM::Write(ci_charlieplex_errorLight, 0); //turn off the error light after a while so we know if error is still happening
     //servo debugging
 #ifdef debug_servos
@@ -545,8 +555,8 @@ void readLimitSwitches()
     }
   }
 
-//front
-if (b_switch_frontCurrent != b_switch_frontPrev)
+  //front
+  if (b_switch_frontCurrent != b_switch_frontPrev)
   {
     //reset debounce timer
     ul_switch_debounceFront = millis();
@@ -721,7 +731,7 @@ void placeCube()
         //timer that pyramid was tipped
         if (millis() - ul_pyramid_timer > ui_servo_waitTime)
         {
-          //i_pyramid_index++;
+          i_pyramid_index++;
         }
         break;
       }

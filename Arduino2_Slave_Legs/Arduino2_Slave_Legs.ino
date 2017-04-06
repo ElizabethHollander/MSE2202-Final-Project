@@ -17,11 +17,11 @@
 
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
-//#define debug_ultrasonic
+#define debug_ultrasonic
 //#define debug_motors
 //#define debug_encoders
-#define debug_IR
-//#define debug_communciations
+//#define debug_IR
+#define debug_communciations
 const unsigned int cui_debug_displayInterval = 1000; //time between display on debug output, in ms
 
 
@@ -131,8 +131,12 @@ bool b_us_leftRearWasTrue;
 bool b_switch_prevState;
 bool b_switch_currentState;
 unsigned long ul_switch_debounceTimer;
-const int ci_switch_debounceTime=20; //time to wait after state change to update
+const int ci_switch_debounceTime = 20; //time to wait after state change to update
 
+//wall following variables
+const int ci_wall_rearTargetDis = 290; //use to keep wall following parallel
+const int ci_wall_frontTargetDis = 360;
+const int ci_wall_tolerenceDis = 40; //anything beyond this scope will
 
 
 void setup() {
@@ -177,7 +181,7 @@ void setup() {
   b_motor_changeEnabled = false;
   b_main_motorCalForward = true;
   d_us_tolerence = 1.2; //this must be greater than 1 for ultrasonic readings to make sense
-  
+
 
 
   //eeprom set up for motors offset
@@ -238,6 +242,10 @@ void loop() {
             {
               //begin following wall, parrallel backwards
               break;
+            }
+          case 3:
+            {
+              //made it to end of wall, communicate with master to
             }
           default:
             {
@@ -340,14 +348,14 @@ void loop() {
     case 3:
       {
         //extra for testing or something
-        //attachMotors();
-        //b_motor_changeEnabled = true;
+        attachMotors();
+        b_motor_changeEnabled = true;
         //driveForwards();
         //driveBackwards();
         //ui_motor_leftSpeed=1000;
         //ui_motor_rightSpeed=2000;
         //driveMotors();
-
+        followWall();
         //rotateClockwise();
         break;
       }
@@ -533,7 +541,7 @@ void pingAll()
   pingAllSubFunction();
 
   //calculate average for each reading, zero values are kept, just because of less processing and code will get filterd later
-  for (int i = 0; i < 5; i++)
+  for (int i = 0; i < 3; i++)
   {
     if (i == 0)
     {
@@ -551,11 +559,11 @@ void pingAll()
     l_sensor_usRight += l_us_rawRight[i];
   }
   //make average
-  l_sensor_usFront /= 5;
-  l_sensor_usRear /= 5;
-  l_sensor_usLeftFront /= 5;
-  l_sensor_usLeftRear /= 5;
-  l_sensor_usRight /= 5;
+  l_sensor_usFront /= 3;
+  l_sensor_usRear /= 3;
+  l_sensor_usLeftFront /= 3;
+  l_sensor_usLeftRear /= 3;
+  l_sensor_usRight /= 3;
 
   //calculate if values of each reading lie within the tolerance of average
   //set to true by default, if false for loop will change that
@@ -565,7 +573,7 @@ void pingAll()
   b_us_leftRearIsTrue = true;
   b_us_rightIsTrue = true;
 
-  for (int i = 0; i < 5; i++)
+  for (int i = 0; i < 3; i++)
   {
     if ((l_sensor_usFront * d_us_tolerence < l_us_rawFront[i]) || (l_sensor_usFront / d_us_tolerence > l_us_rawFront[i]))
     {
@@ -703,18 +711,6 @@ void readEncoders()
   encoder_rightMotor.getRawPosition();
 }
 
-void IRdebounce()
-{
-  //I don't think this is nessisary, due to interpreting IR in different functions, and accuracy discovered in testing
-
-}
-
-void readAllSensors()
-{
-  //read values for ultrasonic, IR, IR switch, encoders
-
-}
-
 void detachMotors()
 {
   //detaches the two motors, use when idle for instructions
@@ -772,6 +768,58 @@ void driveBackwards()
 void followWall()
 {
   //uses 2 ultrasonics to drive parallel to wall, forwards
+  attachMotors();
+  b_motor_changeEnabled = true;
+  ui_motor_leftSpeed = cui_motor_forwardSpeed + ui_motor_leftOffset;
+  ui_motor_rightSpeed = cui_motor_forwardSpeed + ui_motor_rightOffset;
+
+  if (b_us_leftFrontIsTrue)
+  { //check value is not nonsense
+    if (l_sensor_usLeftFront > ci_wall_frontTargetDis + ci_wall_tolerenceDis)
+    {
+      //front corner too far away, slow down right wheel
+      ui_motor_leftSpeed -= 100;
+    }
+    if (l_sensor_usLeftFront < ci_wall_frontTargetDis - ci_wall_tolerenceDis)
+    {
+      //front is too close to wall, slow down left wheel
+      ui_motor_rightSpeed -= 100;
+    }
+  }
+  if (b_us_leftRearIsTrue)
+  {
+    if (l_sensor_usLeftRear > ci_wall_rearTargetDis + ci_wall_tolerenceDis)
+    {
+      //rear corner too far, slow down left
+      ui_motor_rightSpeed -= 100;
+    }
+    if (l_sensor_usLeftRear < ci_wall_rearTargetDis - ci_wall_tolerenceDis)
+    {
+      //rear corner too close, slow down right
+      ui_motor_leftSpeed -= 100;
+    }
+  }
+
+  //ensure this makes them go forwards
+  ui_motor_leftSpeed = constrain(ui_motor_leftSpeed, 1500, 2100);
+  ui_motor_rightSpeed = constrain(ui_motor_rightSpeed, 1500, 2100);
+
+
+  //write speeds to motors
+  driveMotors();
+
+  //safety check that end was not hit
+  if (b_us_frontIsTrue)
+  {
+    //its a reliable reading
+    if (l_sensor_usFront < 230)
+    {
+      //right in front of wall, stop motors, return to index 0, tell master, wait for further instruction
+      stopMotors();
+      i_main_courseIndex = 0;
+      tellMaster.write(1);
+    }
+  }
 
 }
 
