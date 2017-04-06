@@ -18,25 +18,25 @@
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
 //#define debug_ultrasonic
-#define debug_motors
-#define debug_encoders
-//#define debug_IR
+//#define debug_motors
+//#define debug_encoders
+#define debug_IR
 //#define debug_communciations
 const unsigned int cui_debug_displayInterval = 1000; //time between display on debug output, in ms
 
 
 //Pin mapping
 SoftwareSerial tellMaster(16, 17); //comm ports with arduino 2 for communication, A2 and A3
-const int ci_pin_usTrigLeftFront = 8; //might want to make this an array instead of 5 seperate variables
-const int ci_pin_usEchoLeftFront = 9;
-const int ci_pin_usTrigLeftRear = 2;
-const int ci_pin_usEchoLeftRear = 3;
-const int ci_pin_usTrigRight = 4;
-const int ci_pin_usEchoRight = 5;
-const int ci_pin_usTrigRear = 12;
-const int ci_pin_usEchoRear = 13;
-const int ci_pin_usTrigFront = 10;
-const int ci_pin_usEchoFront = 11;
+const int ci_pin_usTrigLeftFront = 9; //might want to make this an array instead of 5 seperate variables
+const int ci_pin_usEchoLeftFront = 8;
+const int ci_pin_usTrigLeftRear = 3;
+const int ci_pin_usEchoLeftRear = 2;
+const int ci_pin_usTrigRight = 5;
+const int ci_pin_usEchoRight = 4;
+const int ci_pin_usTrigRear = 13;
+const int ci_pin_usEchoRear = 12;
+const int ci_pin_usTrigFront = 11;
+const int ci_pin_usEchoFront = 10;
 const int ci_pin_leftMotor = 6; //Left and right motors could be flipped
 const int ci_pin_rightMotor = 7;
 I2CEncoder encoder_leftMotor;
@@ -52,7 +52,7 @@ Servo servo_leftMotor;
 Servo servo_rightMotor;
 byte bt_master_message;
 byte bt_sensor_IR;
-bool b_sensor_IRswitch;
+bool b_sensor_IRswitch; //true for AE false of IO
 long l_sensor_usFront;
 long l_sensor_usRight;
 long l_sensor_usRear;
@@ -70,7 +70,7 @@ bool b_main_motorCalForward; //determines direction of calibration, flips after 
 
 //Motor speed variables
 const unsigned int cui_motor_forwardSpeed = 1900;
-const unsigned int cui_motor_reverseSpeed = 1300;
+const unsigned int cui_motor_reverseSpeed = 1200;
 const unsigned int cui_motor_stop = 1500;
 unsigned int ui_motor_leftOffset;
 unsigned int ui_motor_rightOffset;
@@ -98,6 +98,40 @@ byte b_HighByte;
 //variables used in communicating with master
 byte bt_master_lastMessage;
 bool b_master_newCommand; //true when issuing command from master has changed, false if same as last cycle
+
+//ultrasonic data processing variables
+double d_us_tolerence; //used to accept when a fixed reading is reasonable, used as a "percentage" (is multiplied to get upper range, divided for lower)
+long l_us_rawFront[5]; //process 5 reading of ultrasonic at once and average them for use
+long l_us_rawRear[5];
+long l_us_rawRight[5];
+long l_us_rawLeftFront[5];
+long l_us_rawLeftRear[5];
+long l_us_prevFront[5]; //previously measured reading for the each ultrasonic
+long l_us_prevRear[5];
+long l_us_prevRight[5];
+long l_us_prevLeftFront[5];
+long l_us_prevLeftRear[5];
+bool b_us_frontIsTrue; //is true when current reading is within tolerance
+bool b_us_rearIsTrue;
+bool b_us_rightIsTrue;
+bool b_us_leftFrontIsTrue;
+bool b_us_leftRearIsTrue;
+long l_us_pSensorFront; //keeps track of previous cycle data, for comparision
+long l_us_pSensorRear;
+long l_us_pSensorRight;
+long l_us_pSensorLeftFront;
+long l_us_pSensorLeftRear;
+bool b_us_frontWasTrue; //previous cycle data
+bool b_us_rearWasTrue;
+bool b_us_rightWasTrue;
+bool b_us_leftFrontWasTrue;
+bool b_us_leftRearWasTrue;
+
+//IR switch debouncing variables
+bool b_switch_prevState;
+bool b_switch_currentState;
+unsigned long ul_switch_debounceTimer;
+const int ci_switch_debounceTime=20; //time to wait after state change to update
 
 
 
@@ -142,6 +176,8 @@ void setup() {
   b_motor_attached = true;
   b_motor_changeEnabled = false;
   b_main_motorCalForward = true;
+  d_us_tolerence = 1.2; //this must be greater than 1 for ultrasonic readings to make sense
+  
 
 
   //eeprom set up for motors offset
@@ -165,9 +201,9 @@ void loop() {
   // code runs similar to master, instead of button input, gets instructions from serial port
   //reads data from all sensors
   readMaster();
-  //pingAll();
+  pingAll();
   readIR();
-  //readEncoders();
+  readEncoders();
 
 
   switch (i_main_modeIndex)
@@ -252,7 +288,7 @@ void loop() {
             EEPROM.write(ci_Left_Motor_Offset_Address_H, highByte(ui_motor_leftOffset));
 
             b_main_motorCalForward = false;
-            ul_main_calibrationTime=millis(); //this is to prevent immediate skipping through reverse mode
+            ul_main_calibrationTime = millis(); //this is to prevent immediate skipping through reverse mode
             detachMotors();
             tellMaster.write(1); //tell master that it is done calibrating
           }
@@ -294,7 +330,7 @@ void loop() {
             EEPROM.write(ci_Left_Motor_Offset_Address_H_Back, highByte(ui_motor_leftOffsetBack));
 
             b_main_motorCalForward = true;
-            ul_main_calibrationTime=millis(); //this is to prevent immediate skipping through forward mode
+            ul_main_calibrationTime = millis(); //this is to prevent immediate skipping through forward mode
             detachMotors();
             tellMaster.write(1); //tell master that it is done calibrating
           }
@@ -304,10 +340,15 @@ void loop() {
     case 3:
       {
         //extra for testing or something
-        attachMotors();
-        b_motor_changeEnabled = true;
+        //attachMotors();
+        //b_motor_changeEnabled = true;
         //driveForwards();
-        driveBackwards();
+        //driveBackwards();
+        //ui_motor_leftSpeed=1000;
+        //ui_motor_rightSpeed=2000;
+        //driveMotors();
+
+        //rotateClockwise();
         break;
       }
     default:
@@ -323,26 +364,30 @@ void loop() {
   if (millis() - ul_debug_secTimer > cui_debug_displayInterval)
   {
     ul_debug_secTimer = millis();
-    Serial.println(i_main_modeIndex);
     //ultrasonic debug
 #ifdef debug_ultrasonic
-    Serial.println("Debug ultrasonic values:");
+    Serial.println("Debug ultrasonic values (first number 1=reliable, 0=random):");
+    Serial.print(b_us_frontIsTrue);
     Serial.print("  Front: ");
     Serial.print(l_sensor_usFront);
     Serial.print("   in cm: ");
     Serial.println(l_sensor_usFront / 58.2);
+    Serial.print(b_us_rearIsTrue);
     Serial.print("  Rear: ");
     Serial.print(l_sensor_usRear);
     Serial.print("   in cm: ");
     Serial.println(l_sensor_usRear / 58.2);
+    Serial.print(b_us_leftFrontIsTrue);
     Serial.print("  Left front: ");
     Serial.print(l_sensor_usLeftFront);
     Serial.print("   in cm: ");
     Serial.println(l_sensor_usLeftFront / 58.2);
+    Serial.print(b_us_leftRearIsTrue);
     Serial.print("  Left rear: ");
     Serial.print(l_sensor_usLeftRear);
     Serial.print("   in cm: ");
     Serial.println(l_sensor_usLeftRear / 58.2);
+    Serial.print(b_us_rightIsTrue);
     Serial.print("  Right: ");
     Serial.print(l_sensor_usRight);
     Serial.print("   in cm: ");
@@ -485,34 +530,75 @@ void readMaster()
 void pingAll()
 {
   //reads all ultrasonic values
-  digitalWrite(ci_pin_usTrigFront, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(ci_pin_usTrigFront, LOW);
-  l_sensor_usFront = pulseIn(ci_pin_usEchoFront, HIGH);
+  pingAllSubFunction();
 
-  digitalWrite(ci_pin_usTrigLeftFront , HIGH);
-  delayMicroseconds(10);
-  digitalWrite(ci_pin_usTrigLeftFront, LOW);
-  l_sensor_usLeftFront = pulseIn(ci_pin_usEchoLeftFront, HIGH);
+  //calculate average for each reading, zero values are kept, just because of less processing and code will get filterd later
+  for (int i = 0; i < 5; i++)
+  {
+    if (i == 0)
+    {
+      //reset sensor readings to zero, before summing up average
+      l_sensor_usFront = 0;
+      l_sensor_usRear = 0;
+      l_sensor_usLeftFront = 0;
+      l_sensor_usLeftRear = 0;
+      l_sensor_usRight = 0;
+    }
+    l_sensor_usFront += l_us_rawFront[i];
+    l_sensor_usRear += l_us_rawRear[i];
+    l_sensor_usLeftFront += l_us_rawLeftFront[i];
+    l_sensor_usLeftRear += l_us_rawLeftRear[i];
+    l_sensor_usRight += l_us_rawRight[i];
+  }
+  //make average
+  l_sensor_usFront /= 5;
+  l_sensor_usRear /= 5;
+  l_sensor_usLeftFront /= 5;
+  l_sensor_usLeftRear /= 5;
+  l_sensor_usRight /= 5;
 
-  digitalWrite(ci_pin_usTrigLeftRear, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(ci_pin_usTrigLeftRear, LOW);
-  l_sensor_usLeftRear = pulseIn(ci_pin_usEchoLeftRear, HIGH);
+  //calculate if values of each reading lie within the tolerance of average
+  //set to true by default, if false for loop will change that
+  b_us_frontIsTrue = true;
+  b_us_rearIsTrue = true;
+  b_us_leftFrontIsTrue = true;
+  b_us_leftRearIsTrue = true;
+  b_us_rightIsTrue = true;
 
-  digitalWrite(ci_pin_usTrigRight, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(ci_pin_usTrigRight, LOW);
-  l_sensor_usRight = pulseIn(ci_pin_usEchoRight, HIGH);
+  for (int i = 0; i < 5; i++)
+  {
+    if ((l_sensor_usFront * d_us_tolerence < l_us_rawFront[i]) || (l_sensor_usFront / d_us_tolerence > l_us_rawFront[i]))
+    {
+      //a value in front ultrasonic reading is out of bounds, random readings may exist with skewed data
+      b_us_frontIsTrue = false;
+    }
+    if ((l_sensor_usRear * d_us_tolerence < l_us_rawRear[i]) || (l_sensor_usRear / d_us_tolerence > l_us_rawRear[i]))
+    {
+      //a value in rear ultrasonic reading is out of bounds, random readings may exist with skewed data
+      b_us_rearIsTrue = false;
+    }
+    if ((l_sensor_usLeftFront * d_us_tolerence < l_us_rawLeftFront[i]) || (l_sensor_usLeftFront / d_us_tolerence > l_us_rawLeftFront[i]))
+    {
+      //a value in left front ultrasonic reading is out of bounds, random readings may exist with skewed data
+      b_us_leftFrontIsTrue = false;
+    }
+    if ((l_sensor_usLeftRear * d_us_tolerence < l_us_rawLeftRear[i]) || (l_sensor_usLeftRear / d_us_tolerence > l_us_rawLeftRear[i]))
+    {
+      //a value in left rear ultrasonic reading is out of bounds, random readings may exist with skewed data
+      b_us_leftRearIsTrue = false;
+    }
+    if ((l_sensor_usRight * d_us_tolerence < l_us_rawRight[i]) || (l_sensor_usRight / d_us_tolerence > l_us_rawRight[i]))
+    {
+      //a value in right ultrasonic reading is out of bounds, random readings may exist with skewed data
+      b_us_rightIsTrue = false;
+    }
+  }
 
-  digitalWrite(ci_pin_usTrigRear, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(ci_pin_usTrigRear, LOW);
-  l_sensor_usRear = pulseIn(ci_pin_usEchoRear, HIGH);
 }
 
 void readIR()
 {
+  readIRSwitch();
   //takes IR reading
   if (!pin_IR.isListening())
   {
@@ -527,13 +613,87 @@ void readIR()
   tellMaster.listen(); //only need IR reading when we read it, communication from master can come at any point and we should leave the port free as much as possible
 }
 
-void pingDebounce()
+void readIRSwitch()
 {
-  //debounce on ping distance, throws out values if distance has random spike
-  //note that ultrasonic can pick up bumps, and pyramid, may cause random change in distance read
-  // do something about this change? trigger a variable, make a different function for it? idk...
-  //especially for the pyramid, that one causes completely random pings, bumps are at least consistant
+  //reads the value off IR switch, with debouncing
+  //when the value changes, sends one message to master to indicate that
+  //the single use of write shouldn't affect performance, as this switch is assumed to not be changed during course navigation anyway
 
+  //update to previous states
+  b_switch_prevState = b_switch_currentState;
+
+  //get current state
+  b_switch_currentState = digitalRead(ci_pin_IRswitch);
+
+  //debouncing check
+  if (b_switch_currentState != b_switch_prevState)
+  {
+    //reset debounce timer
+    ul_switch_debounceTimer = millis();
+  }
+  else if (millis() - ul_switch_debounceTimer > ci_switch_debounceTime)
+  {
+    //has passed debouncing, only update if updating needed
+    if (b_sensor_IRswitch != b_switch_currentState)
+    {
+      b_sensor_IRswitch = b_switch_currentState;
+
+      //tell master about the update in state change...
+      //actually, this is only to change a light in charliplex. not needed, scarp the communication on this value
+    }
+  }
+}
+
+void pingAllSubFunction()
+{
+  //used to actually ping and measure the ultrasonic readings, do not use on its own
+
+  //for loop to measure 5 readings at a time, process average later
+  for (int i = 0; i < 5; i++)
+  {
+    l_us_prevFront[i] = l_us_rawFront[i]; //sets previous reading
+    digitalWrite(ci_pin_usTrigFront, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(ci_pin_usTrigFront, LOW);
+    l_us_rawFront[i] = pulseIn(ci_pin_usEchoFront, HIGH);
+
+    l_us_prevLeftFront[i] = l_us_rawLeftFront[i];
+    digitalWrite(ci_pin_usTrigLeftFront , HIGH);
+    delayMicroseconds(10);
+    digitalWrite(ci_pin_usTrigLeftFront, LOW);
+    l_us_rawLeftFront[i] = pulseIn(ci_pin_usEchoLeftFront, HIGH);
+
+    l_us_prevLeftRear[i] = l_us_rawLeftRear[i];
+    digitalWrite(ci_pin_usTrigLeftRear, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(ci_pin_usTrigLeftRear, LOW);
+    l_us_rawLeftRear[i] = pulseIn(ci_pin_usEchoLeftRear, HIGH);
+
+    l_us_prevRight[i] = l_us_rawRight[i];
+    digitalWrite(ci_pin_usTrigRight, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(ci_pin_usTrigRight, LOW);
+    l_us_rawRight[i] = pulseIn(ci_pin_usEchoRight, HIGH);
+
+    l_us_prevRear[i] = l_us_rawRear[i];
+    digitalWrite(ci_pin_usTrigRear, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(ci_pin_usTrigRear, LOW);
+    l_us_rawRear[i] = pulseIn(ci_pin_usEchoRear, HIGH);
+  }
+
+  //convert old data to previous data variables
+  l_us_pSensorFront = l_sensor_usFront;
+  l_us_pSensorRear = l_sensor_usRear;
+  l_us_pSensorRight = l_sensor_usRight;
+  l_us_pSensorLeftFront = l_sensor_usLeftFront;
+  l_us_pSensorLeftRear = l_sensor_usLeftRear;
+
+  b_us_frontWasTrue = b_us_frontIsTrue;
+  b_us_rearWasTrue = b_us_rearIsTrue;
+  b_us_rightWasTrue = b_us_rightIsTrue;
+  b_us_leftFrontWasTrue = b_us_leftFrontIsTrue;
+  b_us_leftRearWasTrue = b_us_leftRearIsTrue;
 }
 
 void readEncoders()
@@ -541,12 +701,6 @@ void readEncoders()
   //read both encoder values
   encoder_leftMotor.getRawPosition();
   encoder_rightMotor.getRawPosition();
-}
-
-void switchDebounce()
-{
-  //debounce for the IRswitch
-
 }
 
 void IRdebounce()
@@ -611,7 +765,7 @@ void driveBackwards()
   if (b_motor_attached && b_motor_changeEnabled)
   {
     servo_leftMotor.writeMicroseconds(constrain(cui_motor_reverseSpeed + ui_motor_leftOffsetBack, 300, 1400));
-    servo_rightMotor.writeMicroseconds((cui_motor_reverseSpeed + ui_motor_rightOffsetBack, 300, 1400));
+    servo_rightMotor.writeMicroseconds(constrain(cui_motor_reverseSpeed + ui_motor_rightOffsetBack, 300, 1400));
   }
 }
 
@@ -630,6 +784,11 @@ void followWallBackwards()
 void rotateClockwise()
 {
   //Rotates robot clockwise, attempt to turn on the spot
+  if (b_motor_attached && b_motor_changeEnabled)
+  {
+    servo_leftMotor.writeMicroseconds(constrain(cui_motor_forwardSpeed + ui_motor_leftOffset, 1600, 2100));
+    servo_rightMotor.writeMicroseconds(constrain(cui_motor_reverseSpeed + ui_motor_rightOffsetBack, 300, 1400));
+  }
 
 }
 
@@ -645,7 +804,8 @@ void stopMotors()
   //may not need to be a function, can be a bool locking movement, similar to linefollower
   if (b_motor_attached)
   {
-
+    servo_leftMotor.writeMicroseconds(cui_motor_stop);
+    servo_rightMotor.writeMicroseconds(cui_motor_stop);
   }
 
 }

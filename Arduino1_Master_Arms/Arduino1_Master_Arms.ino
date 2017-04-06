@@ -18,8 +18,8 @@
 
 //DEBUGGING
 // uncomment lines based on what needs debugging, will print values to serial every loop
-#define debug_servos
-//#define debug_limitSwitches
+//#define debug_servos
+#define debug_limitSwitches
 //#define debug_communications
 const unsigned int cui_debug_displayInterval = 1000; //Time between outputs displayed when debugging is enabled, in ms
 
@@ -50,10 +50,9 @@ const int ci_charlieplex_foundCube = 11; //on when either arm limit switch is tr
 const int ci_charlieplex_foundPyramid = 8; //on when pyramid limit switch is triggered
 const int ci_charlieplex_successLight = 2; //turns on when finished course
 const int ci_charlieplex_errorLight = 5; //turns on when some kind of error in code logic happens
-const int ci_charlieplex_AEmode = 10; //on when AE detector, off when IO detector
 const int ci_charlieplex_calibration = 7; //turns on when in middle of a calibration
 const int ci_charlieplex_setupLight = 1; //turns on when set up is initiating
-//LED 4 still free for stuff, 1 can also blink or something for re-use
+//LED 4, 10 still free for stuff, 1 can also blink or something for re-use
 
 //Data from sensors
 Servo servo_rearArm;
@@ -65,9 +64,6 @@ Servo servo_tipPlate;
 bool b_sensor_rearSwitch;  //Note: sensor means its a value we can use in rest of code, it has already gone through debouncer
 bool b_sensor_frontSwitch;
 bool b_sensor_tipSwitch;
-bool b_sensor_rearSwtichPrev;
-bool b_sensor_frontSwitchPrev;
-bool b_sensor_tipSwitchPrev;
 byte bt_slave_message; //stores message recieved from the slave arduino 2
 
 //Main loop variables
@@ -84,10 +80,17 @@ bool b_slave_isFinished; //toggles to true when slave sends 1, false after somet
 int i_slave_modeIndex; //keep track of index number slave has responded with, saying that its on
 int i_slave_courseIndex;
 
-//debouncing variables
-long l_debouceLimitSwitches_currentmillis;
-const int ci_debounceLimitSwitches_delay = 50;
-bool b_resetDelay;
+//limit switch reading variables
+bool b_switch_rearCurrent;
+bool b_switch_frontCurrent;
+bool b_switch_tipCurrent;
+bool b_switch_rearPrev;
+bool b_switch_frontPrev;
+bool b_switch_tipPrev;
+const int ci_switch_debounceTime=20;
+unsigned long ul_switch_debounceRear;
+unsigned long ul_switch_debounceFront;
+unsigned long ul_switch_debounceTip;
 
 //Servo control variables
 bool b_servo_rearArmOn; //bool variables we use to turn on and off servos, useful for debugging/clean code?
@@ -233,7 +236,7 @@ void loop() {
 
   //communication with other board all the time, and read all sensors
   readSlave();
-  //readLimitSwitches();
+  readLimitSwitches();
 
 
   //main switch statement to drive mode that is operating in
@@ -328,9 +331,6 @@ void loop() {
       }
   }
 
-  b_sensor_rearSwitch = digitalRead(ci_pin_rearSwitch);
-  b_sensor_frontSwitch = digitalRead(ci_pin_frontSwitch);
-  b_sensor_tipSwitch = digitalRead(ci_pin_tipSwitch);
 
   moveServos(); //tells the servos that are turned on to move to desired position, also auto turns them off (according to a bool for on off and int for position)
 
@@ -434,28 +434,28 @@ void readSlave()
         {
           //case 2-5 reserved for telling mode indicator index, map to 0-3
           //now using these to indicate slave has confirmation of command
-          i_slave_modeIndex=bt_slave_message-2;
+          i_slave_modeIndex = bt_slave_message - 2;
           break;
         }
-        case 6:
-        case 7:
-        case 8:
-        case 9:
-        case 10:
-        case 11:
-        case 12:
-        case 13:
-        case 14:
-        case 15:
-        case 16:
-        case 17:
-        case 18:
-        case 19:
-        case 20:
+      case 6:
+      case 7:
+      case 8:
+      case 9:
+      case 10:
+      case 11:
+      case 12:
+      case 13:
+      case 14:
+      case 15:
+      case 16:
+      case 17:
+      case 18:
+      case 19:
+      case 20:
         {
           //case 6-20 is to indicate progress though course index
           //master recieves slave's confirmation signal
-          i_slave_courseIndex=bt_slave_message-6;
+          i_slave_courseIndex = bt_slave_message - 6;
           break;
         }
       case 255: //error message
@@ -512,64 +512,71 @@ void turnOffAllServos()
   }
 }
 
-/*void limitSwitchDebounce()
+
+
+
+
+void readLimitSwitches()
+{
+  //take sensor readings for all limit switches, includes debouncing
+  //update to previous states
+  b_switch_rearPrev = b_switch_rearCurrent;
+  b_switch_frontPrev = b_switch_frontCurrent;
+  b_switch_tipPrev = b_switch_tipCurrent;
+
+  //get current state, use ! because 1 is off, 0 is triggered, I want opposite notation
+  b_switch_rearCurrent = !digitalRead(ci_pin_rearSwitch);
+  b_switch_frontCurrent = !digitalRead(ci_pin_frontSwitch);
+  b_switch_tipCurrent = !digitalRead(ci_pin_tipSwitch);
+
+  //debouncing check
+  //rear
+  if (b_switch_rearCurrent != b_switch_rearPrev)
   {
-  //any readings we get from limit switches have to do through this before we use the
-  if (b_resetDelay == LOW)
-  { l_debouceLimitSwitches_currentmillis = millis();
-    b_resetDelay = HIGH;
+    //reset debounce timer
+    ul_switch_debounceRear = millis();
   }
-
-  if ( millis() - l_debouceLimitSwitches_currentmillis > ci_debounceLimitSwitches_delay)
+  else if (millis() - ul_switch_debounceRear > ci_switch_debounceTime)
   {
-
-    if (  b_sensor_rearSwitchPrev == digitalRead(ci_pin_rearSwitch))
+    //has passed debouncing, only update if updating needed
+    if (b_sensor_rearSwitch != b_switch_rearCurrent)
     {
-      b_sensor_rearSwitch = b_sensor_rearSwitchPrev;
+      b_sensor_rearSwitch = b_switch_rearCurrent;
     }
-    else
-    {
-      b_sensor_rearSwitch = !b_sensor_rearSwitchPrev;
-    }
-
-    if (  b_sensor_frontSwitchPrev == digitalRead(ci_pin_frontSwitch))
-    {
-      b_sensor_frontSwitch = b_sensor_frontSwitchPrev;
-    }
-    else
-    {
-      b_sensor_frontSwitch = !b_sensor_frontSwitchPrev;
-    }
-
-    if (  b_sensor_tipSwitchPrev == digitalRead(ci_pin_tipSwitch))
-    {
-      b_sensor_tipSwitch = b_sensor_tipSwitchPrev;
-    }
-    else
-    {
-      b_sensor_tipSwitch = !b_sensor_tipSwitchPrev;
-    }
-
-    b_resetDelay = LOW;
-
   }
 
-
-  }
-
-  void readLimitSwitches()
+//front
+if (b_switch_frontCurrent != b_switch_frontPrev)
   {
-  //take sensor readings for all limit switches, should use debounce as part of this function
-  b_sensor_rearSwitchPrev = digitalRead(ci_pin_rearSwitch);
-  b_sensor_frontSwitchPrev = digitalRead(ci_pin_frontSwitch);
-
-  b_sensor_tipSwitchPrev = digitalRead(ci_pin_tipSwitch);
-
-  limitSwitchDebounce();
-
-
+    //reset debounce timer
+    ul_switch_debounceFront = millis();
   }
-*/
+  else if (millis() - ul_switch_debounceFront > ci_switch_debounceTime)
+  {
+    //has passed debouncing, only update if updating needed
+    if (b_sensor_frontSwitch != b_switch_frontCurrent)
+    {
+      b_sensor_frontSwitch = b_switch_frontCurrent;
+    }
+  }
+
+  //tip
+  if (b_switch_tipCurrent != b_switch_tipPrev)
+  {
+    //reset debounce timer
+    ul_switch_debounceTip = millis();
+  }
+  else if (millis() - ul_switch_debounceTip > ci_switch_debounceTime)
+  {
+    //has passed debouncing, only update if updating needed
+    if (b_sensor_tipSwitch != b_switch_tipCurrent)
+    {
+      b_sensor_tipSwitch = b_switch_tipCurrent;
+    }
+  }
+
+}
+
 
 void moveServos()
 {
@@ -714,7 +721,7 @@ void placeCube()
         //timer that pyramid was tipped
         if (millis() - ul_pyramid_timer > ui_servo_waitTime)
         {
-          i_pyramid_index++;
+          //i_pyramid_index++;
         }
         break;
       }
